@@ -19,6 +19,7 @@ from . import deepseek_client
 logger = logging.getLogger(__name__)
 
 MAX_SOURCE_CHARS = 12000  # keep prompts a reasonable size regardless of how much is uploaded
+MAX_GENERATION_ATTEMPTS = 2  # retry once if the returned counts don't match the blueprint
 
 SYSTEM_PROMPT = """You are an expert CBSE exam paper setter. You generate fresh, original \
 exam questions that follow a precisely specified blueprint (sections, question types, \
@@ -46,7 +47,9 @@ Always respond with a single JSON object and nothing else, matching exactly this
 Produce exactly the number of questions each section's blueprint calls for, in order."""
 
 
-def _build_user_prompt(pattern_config: dict, source_texts: list[str], extra_instructions: str) -> str:
+def _build_user_prompt(
+    pattern_config: dict, source_texts: list[str], extra_instructions: str, retry_note: str = ""
+) -> str:
     parts = [
         "Exam blueprint (JSON):",
         json.dumps(pattern_config, indent=2),
@@ -57,8 +60,33 @@ def _build_user_prompt(pattern_config: dict, source_texts: list[str], extra_inst
         parts.append(combined)
     if extra_instructions.strip():
         parts.append(f"Additional instructions from the teacher: {extra_instructions.strip()}")
+    if retry_note:
+        parts.append(retry_note)
     parts.append("Now generate the question set as JSON matching the required shape.")
     return "\n\n".join(parts)
+
+
+def _expected_section_counts(pattern_config: dict) -> dict[str, int]:
+    return {str(s.get("name", "")): s.get("num_questions", 0) for s in pattern_config.get("sections", [])}
+
+
+def _actual_section_counts(raw_questions: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for q in raw_questions:
+        key = str(q.get("section", ""))
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _describe_count_mismatch(expected: dict[str, int], actual: dict[str, int]) -> str:
+    lines = []
+    for section, exp in expected.items():
+        got = actual.get(section, 0)
+        if got != exp:
+            lines.append(f"section '{section}': expected {exp}, got {got}")
+    for section in set(actual) - set(expected):
+        lines.append(f"section '{section}': {actual[section]} question(s) not in the blueprint")
+    return "; ".join(lines)
 
 
 def _mock_response(pattern_config: dict) -> dict:
@@ -105,14 +133,43 @@ def generate_question_set(
 
     try:
         source_texts = [doc.extracted_text for doc in source_documents if doc.extracted_text]
-        user_prompt = _build_user_prompt(pattern.config_json, source_texts, extra_instructions)
-        response = deepseek_client.chat_json(
-            SYSTEM_PROMPT, user_prompt, mock_response=_mock_response(pattern.config_json)
-        )
+        expected_counts = _expected_section_counts(pattern.config_json)
 
-        raw_questions = response.get("questions", [])
-        if not raw_questions:
-            raise ValueError("DeepSeek response contained no questions")
+        raw_questions: list[dict] = []
+        mismatch_description = ""
+        for attempt in range(1, MAX_GENERATION_ATTEMPTS + 1):
+            retry_note = (
+                f"Your previous attempt did not match the required counts ({mismatch_description}). "
+                "Produce exactly the required number of questions for every section this time, "
+                "no more and no fewer."
+                if attempt > 1
+                else ""
+            )
+            user_prompt = _build_user_prompt(pattern.config_json, source_texts, extra_instructions, retry_note)
+            response = deepseek_client.chat_json(
+                SYSTEM_PROMPT, user_prompt, mock_response=_mock_response(pattern.config_json)
+            )
+            raw_questions = response.get("questions", [])
+            if not raw_questions:
+                mismatch_description = "no questions were returned"
+                continue
+            actual_counts = _actual_section_counts(raw_questions)
+            if actual_counts == expected_counts:
+                mismatch_description = ""
+                break
+            mismatch_description = _describe_count_mismatch(expected_counts, actual_counts)
+            logger.warning(
+                "Generation attempt %d/%d produced mismatched section counts: %s",
+                attempt,
+                MAX_GENERATION_ATTEMPTS,
+                mismatch_description,
+            )
+
+        if mismatch_description:
+            raise ValueError(
+                f"DeepSeek did not produce the exact blueprint counts after {MAX_GENERATION_ATTEMPTS} "
+                f"attempt(s): {mismatch_description}"
+            )
 
         for idx, q in enumerate(raw_questions):
             db.add(

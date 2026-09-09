@@ -46,26 +46,50 @@
     <section>
       <h1 class="text-xl font-bold mb-1">Question set patterns (exam blueprint)</h1>
       <p class="text-sm text-gray-600 mb-4">
-        A pattern is the spec generation follows: sections, question types, marks, and counts —
-        see <code>config/pattern.schema.json</code>. Edit the JSON below (a copy of the CBSE sample
-        pattern is pre-filled) and save; it's validated against the schema before saving.
+        A pattern is the spec generation follows: sections, question types, marks, and counts.
+        Build it with the form below — no JSON editing required. Total marks/questions are worked
+        out for you. Power users can view or paste raw JSON under "Advanced" at the bottom.
       </p>
 
-      <form id="pattern-form" class="card p-5 space-y-4 mb-6">
+      <form id="pattern-form" class="card p-5 space-y-5 mb-6">
         <input type="hidden" name="id" />
         <div class="grid sm:grid-cols-3 gap-4">
           <div class="field"><label>Name</label><input type="text" name="name" required /></div>
           <div class="field"><label>Subject</label><input type="text" name="subject" /></div>
           <div class="field"><label>Grade / Class</label><input type="text" name="grade" /></div>
         </div>
-        <div class="field">
-          <label>Pattern JSON</label>
-          <textarea name="config_json" rows="18" required></textarea>
+        <div class="grid sm:grid-cols-3 gap-4">
+          <div class="field"><label>Duration (minutes, optional)</label><input type="number" name="duration_minutes" min="0" /></div>
+          <div class="field sm:col-span-2">
+            <label>General instructions (one per line, optional)</label>
+            <textarea name="general_instructions" rows="2"></textarea>
+          </div>
         </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="font-semibold text-sm">Sections</label>
+            <button type="button" id="add-section-btn" class="btn btn-secondary">+ Add section</button>
+          </div>
+          <div id="sections-container" class="space-y-2"></div>
+        </div>
+
+        <div id="pattern-totals" class="text-sm text-gray-600"></div>
+
         <div class="flex gap-3">
           <button type="submit" class="btn btn-primary">Save pattern</button>
           <button type="button" id="pattern-reset" class="btn btn-secondary">New / clear</button>
         </div>
+
+        <details class="border-t pt-3">
+          <summary class="text-sm text-gray-600 cursor-pointer">Advanced: view/edit raw JSON</summary>
+          <div class="field mt-2">
+            <textarea id="pattern-json-view" rows="14"></textarea>
+          </div>
+          <div class="flex gap-3 mt-2">
+            <button type="button" id="json-apply-btn" class="btn btn-secondary">Apply JSON to form above</button>
+          </div>
+        </details>
       </form>
 
       <div id="pattern-list" class="space-y-3"></div>

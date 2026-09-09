@@ -74,12 +74,19 @@ the same mechanism covers any CBSE subject/class. Shape:
 }
 ```
 
-Non-technical editing path: the Admin page's pattern form is a raw-JSON
-textarea today, pre-filled with a working example — copy, tweak the
-numbers/names, save. It's validated server-side before saving, with
-readable field-level errors. (A generated form driven by
-`GET /api/patterns/schema` is the natural next step if hand-editing JSON
-turns out to be too rough for daily use — see §8.)
+Non-technical editing path: the Admin page's pattern editor is a proper
+form — name/subject/grade fields, a repeatable "Sections" list (name,
+question type dropdown, question count, marks, optional internal-choice
+count, optional difficulty mix), with total marks/questions computed and
+shown live. No JSON is required day-to-day. Required fields use native
+browser validation (a name/count/marks left blank is caught before the
+request is even sent), and the payload is still validated server-side
+against `config/pattern.schema.json` as a second line of defense. Power
+users get an "Advanced: view/edit raw JSON" panel (collapsed by default)
+that mirrors the form live and can be pasted into or out of — editing the
+JSON and clicking "Apply" loads it back into the form fields, which stay
+the single source of truth for what actually gets saved. See
+`frontend/js/admin.js` (`formToConfig`/`configToForm`).
 
 ## 6. Generation contract
 
@@ -104,10 +111,17 @@ return exactly one question per blueprint slot, as JSON:
 }
 ```
 
-The app does not currently hard-fail if the count returned doesn't exactly
-match the blueprint — it saves whatever came back. Tightening this (retry
-on mismatch, or reject and surface an error) is a reasonable enhancement
-once real usage shows how often it drifts.
+**Count enforcement:** after each response, the actual per-section question
+counts are compared against the blueprint's `num_questions`. On a mismatch,
+generation retries once with an added note telling the model exactly what
+was wrong (e.g. `section 'A': expected 10, got 8`). If the retry still
+doesn't match, the `QuestionSet` is marked `failed` with that description
+in `error_message` rather than silently saving a partial/incorrect set —
+nothing partially-generated ever reaches the printable view. See
+`_expected_section_counts`/`_actual_section_counts`/`_describe_count_mismatch`
+in `generation.py`, and `backend/tests/test_generation.py` for the retry
+and failure paths (exercised by stubbing `deepseek_client.chat_json`,
+independent of mock mode).
 
 ## 7. Evaluation contract
 
@@ -179,13 +193,15 @@ would have, clearly labelled `[MOCK]`. This means:
 
 ## 11. Natural next steps (not built, but the code is shaped to allow them)
 
-- A generated-form Admin UI for patterns, driven by `GET /patterns/schema`,
-  instead of raw JSON — for a fully non-technical day-to-day editing
-  experience.
 - A local-OCR fallback (Tesseract) ahead of grading, if DeepSeek vision
   accuracy on real handwriting turns out to need it — isolated to
-  `evaluation.py`/`deepseek_client.py`.
-- Enforcing exact question counts per section on generation (retry/repair
-  loop instead of "save whatever came back").
+  `evaluation.py`/`deepseek_client.py`. Deliberately not built yet: the
+  chosen architecture sends photos straight to DeepSeek's vision model
+  (see §7), and this would only be worth adding if that proves unreliable
+  in practice.
 - Multiple children/profiles if this ever needs to serve more than one kid
   from the same install.
+- `GET /api/patterns/schema` already exists (served for tooling/API
+  consumers) but the Admin form (§5) doesn't derive itself from it — the
+  form's fields were hand-built to match the schema. If the schema changes
+  meaningfully, both need updating together today.

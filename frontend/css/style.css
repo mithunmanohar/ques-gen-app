@@ -172,8 +172,10 @@ body {
 .gap-3 { gap: 0.75rem; }
 .gap-4 { gap: 1rem; }
 .gap-6 { gap: 1.5rem; }
+.space-y-2 > * + * { margin-top: 0.5rem; }
 .space-y-3 > * + * { margin-top: 0.75rem; }
 .space-y-4 > * + * { margin-top: 1rem; }
+.space-y-5 > * + * { margin-top: 1.25rem; }
 .space-y-10 > * + * { margin-top: 2.5rem; }
 .space-y-12 > * + * { margin-top: 3rem; }
 
@@ -215,6 +217,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .border-red-200 { border-color: #fecaca; }
 
 .list-\[lower-alpha\] { list-style-type: lower-alpha; }
+.cursor-pointer { cursor: pointer; }
+
+.section-row { background: #fafafa; }
+.section-row summary { color: #6b7280; }
 
 .transition { transition: box-shadow 0.15s ease, background-color 0.15s ease; }
 .hover\:shadow-md:hover { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08); }
