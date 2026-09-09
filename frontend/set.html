@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Question Set — Question Set Studio</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav no-print">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
+      <span class="text-white font-bold">📚 Question Set Studio</span>
+      <a href="/index.html">Home</a>
+      <a href="/admin.html">Admin</a>
+      <a href="/generate.html">Generate</a>
+      <a href="/evaluate.html">Submit &amp; Evaluate</a>
+      <button class="btn btn-secondary ml-auto" onclick="window.print()">Print</button>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-4 py-10">
+    <div id="content">Loading…</div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const setId = params.get("id");
+    const showKey = params.get("key") === "1";
+    const content = document.getElementById("content");
+
+    if (!setId) {
+      content.innerHTML = '<p class="text-red-600">No question set id given.</p>';
+    } else {
+      const url = showKey ? `/api/question-sets/${setId}/answer-key` : `/api/question-sets/${setId}`;
+      Api.get(url)
+        .then(render)
+        .catch((e) => (content.innerHTML = `<p class="text-red-600">Failed to load: ${escapeHtml(e.message)}</p>`));
+    }
+
+    function groupBySection(questions) {
+      const groups = {};
+      const order = [];
+      for (const q of questions) {
+        if (!(q.section in groups)) {
+          groups[q.section] = [];
+          order.push(q.section);
+        }
+        groups[q.section].push(q);
+      }
+      return order.map((name) => ({ name, questions: groups[name] }));
+    }
+
+    function render(set) {
+      document.title = `${set.name} — Question Set Studio`;
+      const sections = groupBySection(set.questions);
+      let html = `
+        <div class="text-center mb-8">
+          <h1 class="text-xl font-bold">${escapeHtml(set.name)}</h1>
+          <p class="text-sm text-gray-600">${escapeHtml(set.subject)} ${set.grade ? "· Grade " + escapeHtml(set.grade) : ""}</p>
+          ${showKey ? '<p class="text-xs font-bold text-red-600 mt-2 no-print">⚠️ ANSWER KEY — for the teacher/parent only, do not print for the student</p>' : ""}
+        </div>`;
+
+      if (set.status !== "ready") {
+        html += `<p class="text-amber-700">This set is ${escapeHtml(set.status)}${set.error_message ? ": " + escapeHtml(set.error_message) : "."}</p>`;
+        content.innerHTML = html;
+        return;
+      }
+
+      for (const section of sections) {
+        html += `<h2 class="font-bold text-lg mt-8 mb-3 border-b pb-1">Section ${escapeHtml(section.name)}</h2>`;
+        section.questions.forEach((q, i) => {
+          html += `<div class="mb-5">
+            <p><span class="font-semibold">${i + 1}.</span> ${escapeHtml(q.text).replace(/\n/g, "<br>")}
+              <span class="text-xs text-gray-500">[${q.marks} mark${q.marks == 1 ? "" : "s"}]</span></p>`;
+          if (q.options && q.options.length) {
+            html += `<ul class="ml-6 mt-1 list-[lower-alpha] text-sm">${q.options.map((o) => `<li>${escapeHtml(o)}</li>`).join("")}</ul>`;
+          }
+          if (!q.options) {
+            html += `<div class="border-b border-dashed border-gray-300 h-10 mt-2"></div>`;
+          }
+          if (showKey) {
+            html += `<div class="mt-2 text-sm bg-green-50 border border-green-200 rounded p-2">
+              <div><strong>Expected answer:</strong> ${escapeHtml(q.expected_answer)}</div>
+              <div><strong>Rubric:</strong> ${escapeHtml(q.rubric)}</div>
+            </div>`;
+          }
+          html += `</div>`;
+        });
+      }
+      content.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
