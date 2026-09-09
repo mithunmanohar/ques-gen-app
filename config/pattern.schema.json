@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Question Set Pattern",
+  "description": "The exam blueprint that generation follows: subject/grade, sections, question types, marks and counts. This is the 'spec' a non-technical admin edits (via the Admin UI form, or by hand) to control what generated question sets look like.",
+  "type": "object",
+  "required": ["name", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "subject": { "type": "string" },
+    "grade": { "type": "string" },
+    "total_marks": { "type": "number", "minimum": 0 },
+    "duration_minutes": { "type": "integer", "minimum": 0 },
+    "general_instructions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "question_type", "num_questions", "marks_per_question"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "description": "e.g. 'A', 'B', 'Section 1'" },
+          "instructions": { "type": "string" },
+          "question_type": {
+            "type": "string",
+            "enum": ["MCQ", "VSA", "SA", "LA", "CASE_STUDY"],
+            "description": "MCQ=multiple choice, VSA=very short answer, SA=short answer, LA=long answer, CASE_STUDY=case/passage-based"
+          },
+          "num_questions": { "type": "integer", "minimum": 1 },
+          "num_to_attempt": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "If set and less than num_questions, this section offers internal choice (e.g. 'attempt any 4 of 6')."
+          },
+          "marks_per_question": { "type": "number", "minimum": 0 },
+          "difficulty_mix": {
+            "type": "object",
+            "description": "Approximate proportion of questions at each difficulty; values should sum to ~1.0",
+            "additionalProperties": false,
+            "properties": {
+              "easy": { "type": "number", "minimum": 0, "maximum": 1 },
+              "medium": { "type": "number", "minimum": 0, "maximum": 1 },
+              "hard": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

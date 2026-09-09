@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Submit &amp; Evaluate — Question Set Studio</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="nav no-print">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
+      <span class="text-white font-bold">📚 Question Set Studio</span>
+      <a href="/index.html">Home</a>
+      <a href="/admin.html">Admin</a>
+      <a href="/generate.html">Generate</a>
+      <a href="/evaluate.html" class="active">Submit &amp; Evaluate</a>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-4 py-10 space-y-10">
+    <section>
+      <h1 class="text-xl font-bold mb-1">Submit an answer sheet</h1>
+      <p class="text-sm text-gray-600 mb-4">
+        Print the question set from the Generate page, let your child solve it on paper, then take
+        clear photos of every page and upload them here. DeepSeek reads the handwriting directly from
+        the photos and grades it against the hidden answer key — no separate OCR step.
+      </p>
+
+      <form id="submit-form" class="card p-5 space-y-4">
+        <div class="field">
+          <label>Question set</label>
+          <select name="question_set_id" id="set-select" required></select>
+        </div>
+        <div class="field">
+          <label>Student name (optional)</label>
+          <input type="text" name="student_name" />
+        </div>
+        <div class="field">
+          <label>Answer sheet photo(s)</label>
+          <input type="file" name="images" accept="image/*" multiple required />
+          <p class="text-xs text-gray-500 mt-1">Select multiple files (or multiple pages) if the answers span more than one photo.</p>
+        </div>
+        <button type="submit" id="submit-btn" class="btn btn-primary">Upload &amp; grade</button>
+      </form>
+    </section>
+
+    <section id="result-section" class="hidden">
+      <h2 class="text-lg font-bold mb-3">Result</h2>
+      <div id="result" class="card p-5"></div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-bold mb-3">Past submissions</h2>
+      <div id="submission-list" class="space-y-3"></div>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/evaluate.js"></script>
+</body>
+</html>
