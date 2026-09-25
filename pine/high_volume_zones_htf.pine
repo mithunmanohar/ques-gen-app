@@ -82,15 +82,14 @@ circle_bars = input.int(20, "Bars to Watch After Zone", minval=1, maxval=200, gr
 circle_intrabar_tf = input.timeframe("", "Intrabar Timeframe", group=grpVZ, tooltip="Lower timeframe used to split the candle's volume by price and into buy/sell. Leave on 'Chart' for automatic (1m for charts up to 4h; charts of 1 minute or less need '1S', which requires a plan with seconds data). If no intrabar data is available the split is estimated from the candle's range and where its close sits.")
 buy_sell_method = input.string("Bar Direction", "Buy/Sell Split Method", options=["Bar Direction", "Close Position"], group=grpVZ, tooltip="Bar Direction = each intrabar's volume is buying if it closed up, selling if it closed down, tick rule for flat bars | Close Position = buy share is (close - low) / (high - low), the rest is sell. Without intrabar data both are applied to the chart candle.")
 circle_min_share = input.float(0.0, "Minimum Volume Share to Mark (%)", minval=0.0, maxval=100.0, step=1.0, group=grpVZ, tooltip="Total volume inside the zone as % of the zone candle's volume. Interactions below this are not marked.")
-circle_lookback = input.int(100, "Size Normalization Lookback (bars)", minval=1, maxval=2000, group=grpVZ, tooltip="Bubble size is proportional to the buy (or sell) volume inside the zone, relative to the largest chart-candle volume seen in this many bars. A bubble reaches its maximum size when that volume equals the largest candle volume in the lookback.")
+circle_ref_mode = input.string("Auto (largest bubble in lookback)", "Size Reference", options=["Auto (largest bubble in lookback)", "Fixed volume"], group=grpVZ, tooltip="Auto: a bubble reaches max size when its volume equals the largest buy/sell bubble volume seen in the lookback. Fixed: max size at the volume given below.")
+circle_lookback = input.int(200, "Size Normalization Lookback (bars)", minval=1, maxval=2000, group=grpVZ)
+circle_ref_vol = input.float(20000, "Max Bubble at Volume (Fixed mode)", minval=1, step=500, group=grpVZ)
 circle_scale = input.string("Area", "Bubble Scale", options=["Area", "Diameter"], group=grpVZ, tooltip="Area: bubble area is proportional to volume (sqrt scaling). Diameter: bubble width is proportional to volume.")
 circle_min_pt = input.int(4, "Min Bubble Size (pt)", minval=1, maxval=50, group=grpVZ)
-circle_max_pt = input.int(40, "Max Bubble Size (pt)", minval=2, maxval=100, group=grpVZ)
+circle_max_pt = input.int(50, "Max Bubble Size (pt)", minval=2, maxval=100, group=grpVZ)
 buy_circle_color = input.color(color.new(color.teal, 30), "Buy Volume Bubble", group=grpVZ)
 sell_circle_color = input.color(color.new(color.red, 30), "Sell Volume Bubble", group=grpVZ)
-show_circle_text = input.bool(true, "Show Volume Number Next to Bubble", group=grpVZ)
-buy_text_color = input.color(color.teal, "Buy Volume Text Color", group=grpVZ)
-sell_text_color = input.color(color.red, "Sell Volume Text Color", group=grpVZ)
 
 // ====================================
 // Intrabar timeframe selection
@@ -469,12 +468,12 @@ volume_in_band(zone_top, zone_bottom) =>
         sell_in := v_in * (1.0 - bs)
     [buy_in, sell_in]
 
-// Largest chart-candle volume in the lookback: the reference for bubble size
-vz_max_vol = ta.highest(nz(volume), circle_lookback)
+// Rolling history of the largest bubble volume per bar (for Auto size reference)
+var array<float> vz_bubble_hist = array.new<float>()
 
-// Bubble size in points, proportional to a volume relative to vz_max_vol
-bubble_size(v) =>
-    ratio = vz_max_vol > 0 ? math.min(math.max(v / vz_max_vol, 0.0), 1.0) : 0.0
+// Bubble size in points, proportional to a volume relative to ref_vol
+bubble_size(v, ref_vol) =>
+    ratio = ref_vol > 0 ? math.min(math.max(v / ref_vol, 0.0), 1.0) : 0.0
     scaled = circle_scale == "Area" ? math.sqrt(ratio) : ratio
     int(math.round(circle_min_pt + (circle_max_pt - circle_min_pt) * scaled))
 
@@ -685,38 +684,58 @@ bgcolor(track_bg, title="Post-Zone Candle Tracking")
 // estimate the buy and sell volume that traded inside the band and draw two concentric bubbles
 // at the zone centre on this bar: buy volume and sell volume, each sized by its own volume.
 // The larger bubble is drawn first so the smaller one stays visible on top.
+// Pass 1: collect buy/sell volume inside every zone this candle interacts with
+vz_idx = array.new<int>()
+vz_buy = array.new<float>()
+vz_sell = array.new<float>()
+bar_max_bubble = 0.0
 if show_vol_circles and array.size(trk_zone_bar) > 0
     for i = 0 to array.size(trk_zone_bar) - 1
         bars_since_zone = bar_index - array.get(trk_zone_bar, i)
         if bars_since_zone >= 1 and bars_since_zone <= circle_bars
             z_top = array.get(trk_zone_top, i)
             z_bottom = array.get(trk_zone_bottom, i)
-            z_center = (z_top + z_bottom) / 2
-            z_quarter = (z_top - z_bottom) / 4
-            interacts = high >= z_bottom and low <= z_top
-            if interacts
+            if high >= z_bottom and low <= z_top
                 [buy_vol, sell_vol] = volume_in_band(z_top, z_bottom)
                 total_in = buy_vol + sell_vol
                 zone_vol = array.get(trk_zone_vol, i)
                 total_share = zone_vol > 0 ? (total_in / zone_vol) * 100 : 0.0
                 if total_in > 0 and total_share >= circle_min_share
-                    delta = buy_vol - sell_vol
-                    delta_pct = total_in > 0 ? delta / total_in * 100 : 0.0
-                    tip = "Buy volume inside zone: " + str.tostring(buy_vol, format.volume) +
-                          "\nSell volume inside zone: " + str.tostring(sell_vol, format.volume) +
-                          "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(delta_pct, "#.#") + "%)" +
-                          "\nTotal share of zone candle volume: " + str.tostring(total_share, "#.#") + "%" +
-                          "\nZone: " + str.tostring(z_bottom, format.mintick) + " - " + str.tostring(z_top, format.mintick) +
-                          "\nSplit from: " + (vz_use_ltf and array.size(ib_vol) > 0 ? vz_ltf + " intrabars" : "candle range (rough estimate)")
-                    buy_bigger = buy_vol >= sell_vol
-                    bubble(z_center, bubble_size(buy_bigger ? buy_vol : sell_vol), buy_bigger ? buy_circle_color : sell_circle_color, tip)
-                    bubble(z_center, bubble_size(buy_bigger ? sell_vol : buy_vol), buy_bigger ? sell_circle_color : buy_circle_color, tip)
-                    if show_circle_text
-                        // Transparent label bodies so only the numbers show, placed just right of each bubble
-                        label.new(bar_index, z_center + z_quarter, str.tostring(buy_vol, format.volume), style=label.style_label_left,
-                                  color=color.new(color.black, 100), textcolor=buy_text_color, size=size.small, tooltip=tip)
-                        label.new(bar_index, z_center - z_quarter, str.tostring(sell_vol, format.volume), style=label.style_label_left,
-                                  color=color.new(color.black, 100), textcolor=sell_text_color, size=size.small, tooltip=tip)
+                    array.push(vz_idx, i)
+                    array.push(vz_buy, buy_vol)
+                    array.push(vz_sell, sell_vol)
+                    bar_max_bubble := math.max(bar_max_bubble, buy_vol, sell_vol)
+
+// Size reference: largest bubble volume in the lookback (including this bar), or a fixed volume
+array.push(vz_bubble_hist, bar_max_bubble)
+if array.size(vz_bubble_hist) > circle_lookback
+    array.shift(vz_bubble_hist)
+vz_ref_vol = circle_ref_mode == "Fixed volume" ? circle_ref_vol : (array.size(vz_bubble_hist) > 0 ? array.max(vz_bubble_hist) : 0.0)
+
+// Pass 2: draw the bubbles
+if array.size(vz_idx) > 0
+    for k = 0 to array.size(vz_idx) - 1
+        i = array.get(vz_idx, k)
+        buy_vol = array.get(vz_buy, k)
+        sell_vol = array.get(vz_sell, k)
+        z_top = array.get(trk_zone_top, i)
+        z_bottom = array.get(trk_zone_bottom, i)
+        z_center = (z_top + z_bottom) / 2
+        total_in = buy_vol + sell_vol
+        zone_vol = array.get(trk_zone_vol, i)
+        total_share = zone_vol > 0 ? (total_in / zone_vol) * 100 : 0.0
+        delta = buy_vol - sell_vol
+        delta_pct = total_in > 0 ? delta / total_in * 100 : 0.0
+        tip = "Buy volume inside zone: " + str.tostring(buy_vol, format.volume) +
+              "\nSell volume inside zone: " + str.tostring(sell_vol, format.volume) +
+              "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(delta_pct, "#.#") + "%)" +
+              "\nTotal share of zone candle volume: " + str.tostring(total_share, "#.#") + "%" +
+              "\nZone: " + str.tostring(z_bottom, format.mintick) + " - " + str.tostring(z_top, format.mintick) +
+              "\nSize reference volume: " + str.tostring(vz_ref_vol, format.volume) +
+              "\nSplit from: " + (vz_use_ltf and array.size(ib_vol) > 0 ? vz_ltf + " intrabars" : "candle range (rough estimate)")
+        buy_bigger = buy_vol >= sell_vol
+        bubble(z_center, bubble_size(buy_bigger ? buy_vol : sell_vol, vz_ref_vol), buy_bigger ? buy_circle_color : sell_circle_color, tip)
+        bubble(z_center, bubble_size(buy_bigger ? sell_vol : buy_vol, vz_ref_vol), buy_bigger ? sell_circle_color : buy_circle_color, tip)
 
 // Guard: this indicator is meaningless without volume data
 if barstate.islast and na(volume)
