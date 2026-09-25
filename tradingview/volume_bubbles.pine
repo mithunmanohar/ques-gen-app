@@ -14,6 +14,19 @@ scaleMode  = input.string("Area", "Scale", options = ["Area", "Diameter"], group
 minSize    = input.int(4, "Min circle size (pt)", minval = 1, group = grpCircle)
 maxSize    = input.int(40, "Max circle size (pt)", minval = 2, group = grpCircle)
 
+grpFilter = "Anomaly filter (current day)"
+filterMode = input.string("Relative volume", "Show circles when", group = grpFilter,
+             options = ["Relative volume", "Z-score", "Both", "Either", "Off (every candle)"],
+             tooltip = "Baseline = the previous candles of the current day only (resets every session).\nRelative volume: volume >= threshold x average of the baseline.\nZ-score: volume is more than N standard deviations above the baseline average.\nBoth / Either: combine the two tests.")
+baseWindow = input.int(12, "Baseline window (candles)", minval = 2, group = grpFilter,
+             tooltip = "How many of today's previous candles form the baseline. 12 x 5m = the last hour. Uses whatever is available early in the day.")
+minBase    = input.int(3, "Min candles before signalling", minval = 2, group = grpFilter,
+             tooltip = "No signals until today has at least this many earlier candles (e.g. 3 = first signal possible at 9:30 on NSE).")
+rvolThr    = input.float(2.0, "Relative volume threshold (x)", minval = 1.0, step = 0.1, group = grpFilter)
+zThr       = input.float(2.0, "Z-score threshold (sigma)", minval = 0.5, step = 0.1, group = grpFilter)
+showDays   = input.string("Today only", "Show on", options = ["Today only", "All days"], group = grpFilter)
+showNormal = input.bool(false, "Faint dot on normal candles", group = grpFilter)
+
 grpDelta = "Buy/sell split"
 ltfInput   = input.timeframe("", "Intrabar timeframe", group = grpDelta,
              tooltip = "Lower timeframe used to split each candle's volume into buying and selling. Leave on 'Chart' for automatic. If no intrabar data is available the split is estimated from where the close sits in the candle's range.")
@@ -56,6 +69,34 @@ sellVol  = vol - buyVol
 delta    = buyVol - sellVol
 deltaPct = vol > 0 ? delta / vol * 100 : 0.0
 
+// ─── Anomaly filter (current day only) ───────────────────────────────────────
+var array<float> dayVols = array.new<float>()
+if timeframe.change("D")
+    dayVols.clear()
+
+float baseAvg = na
+float baseSd  = na
+baseN = math.min(baseWindow, dayVols.size())
+if baseN >= minBase
+    recent  = dayVols.slice(dayVols.size() - baseN, dayVols.size())
+    baseAvg := recent.avg()
+    baseSd  := recent.stdev()
+dayVols.push(vol)   // current candle joins the baseline only for later candles
+
+rvol  = baseAvg > 0 ? vol / baseAvg : na
+zScore = baseSd > 0 ? (vol - baseAvg) / baseSd : na
+rvolHit = rvol >= rvolThr
+zHit    = zScore >= zThr
+isAnomaly = switch filterMode
+    "Relative volume" => rvolHit
+    "Z-score"         => zHit
+    "Both"            => rvolHit and zHit
+    "Either"          => rvolHit or zHit
+    => true
+
+isLastDay = year(time) == year(last_bar_time) and month(time) == month(last_bar_time) and dayofmonth(time) == dayofmonth(last_bar_time)
+inScope   = showDays == "All days" or isLastDay
+
 // ─── Sizing & color ──────────────────────────────────────────────────────────
 maxVol   = ta.highest(vol, lookback)
 maxDelta = ta.highest(math.abs(delta), lookback)
@@ -80,12 +121,17 @@ bubble(sz, col, tip) =>
          size      = sz,                             // v6: size in typographic points
          tooltip   = tip)
 
-if vol > 0
+if vol > 0 and inScope and (isAnomaly or showNormal)
     tip = "Volume: " + str.tostring(vol, format.volume) +
+         "\nRel. volume: " + (na(rvol) ? "n/a" : str.tostring(rvol, "#.##") + "x") +
+         "  Z: " + (na(zScore) ? "n/a" : str.tostring(zScore, "#.#")) +
+         "  (vs last " + str.tostring(baseN) + " candles today)" +
          "\nBuy: " + str.tostring(buyVol, format.volume) + "  Sell: " + str.tostring(sellVol, format.volume) +
          "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(deltaPct, "#.#") + "%)" +
-         "\nSplit from: " + (fromLtf ? ltf + " intrabars" : "candle range (rough estimate)")
-    if displayMode == "Volume + delta"
+         "\nSplit from: " + (fromLtf ? (str.contains(ltf, "S") ? ltf : ltf + "-min") + " intrabars" : "candle range (rough estimate)")
+    if not isAnomaly
+        bubble(minSize, volumeColor, tip)
+    else if displayMode == "Volume + delta"
         // Outer circle = total volume; inner circle = |delta| on the same scale, so the
         // inner/outer ratio shows how one-sided the candle was.
         bubble(sizeFor(vol, maxVol), volumeColor, tip)
@@ -103,6 +149,10 @@ plot(buyVol,   "Buy volume",   display = display.data_window)
 plot(sellVol,  "Sell volume",  display = display.data_window)
 plot(delta,    "Volume delta", display = display.data_window)
 plot(deltaPct, "Delta %",      display = display.data_window)
+plot(rvol,     "Relative volume", display = display.data_window)
+plot(zScore,   "Volume Z-score",  display = display.data_window)
+
+alertcondition(isAnomaly and filterMode != "Off (every candle)" and vol > 0, "Volume anomaly", "Volume anomaly on {{ticker}} {{interval}}: volume {{volume}}")
 
 if barstate.islast and na(volume)
     runtime.error("This symbol has no volume data.")
