@@ -4,9 +4,8 @@ indicator("Volume Bubbles", shorttitle = "VolBubbles", overlay = true, max_label
 
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 grpCircle = "Circles"
-displayMode = input.string("Delta circle", "Display", options = ["Delta circle", "Buy/Sell circles"], group = grpCircle,
-             tooltip = "Delta circle: one circle per candle, colored by buy/sell delta.\nBuy/Sell circles: two concentric circles, each sized by its own volume.")
-sizeBy     = input.string("Total volume", "Size delta circle by", options = ["Total volume", "Absolute delta"], group = grpCircle)
+displayMode = input.string("Volume + delta", "Display", options = ["Volume + delta", "Delta only", "Buy/Sell circles"], group = grpCircle,
+             tooltip = "Volume + delta: faint outer circle = total volume, inner colored circle = |delta| on the same scale.\nDelta only: one circle sized by |delta| relative to the largest delta in the lookback.\nBuy/Sell circles: two concentric circles, each sized by its own volume.")
 centerMode = input.string("Candle (High/Low)", "Circle center", options = ["Candle (High/Low)", "Body (Open/Close)"], group = grpCircle)
 lookback   = input.int(100, "Normalization lookback (bars)", minval = 1, group = grpCircle,
              tooltip = "Circle size is relative to the largest value seen in this many bars.")
@@ -23,6 +22,7 @@ fullAt     = input.float(50, "Full color at delta %", minval = 1, maxval = 100, 
 buyColor     = input.color(color.new(color.teal, 30), "Buy color", group = grpDelta)
 sellColor    = input.color(color.new(color.red, 30), "Sell color", group = grpDelta)
 neutralColor = input.color(color.new(color.gray, 30), "Neutral color", group = grpDelta)
+volumeColor  = input.color(color.new(color.gray, 80), "Total volume circle color", group = grpDelta)
 
 // ─── Buy/sell split ──────────────────────────────────────────────────────────
 // Auto intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate.
@@ -85,8 +85,13 @@ if vol > 0
          "\nBuy: " + str.tostring(buyVol, format.volume) + "  Sell: " + str.tostring(sellVol, format.volume) +
          "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(deltaPct, "#.#") + "%)" +
          "\nSplit from: " + (fromLtf ? ltf + " intrabars" : "candle range (rough estimate)")
-    if displayMode == "Delta circle"
-        bubble(sizeBy == "Total volume" ? sizeFor(vol, maxVol) : sizeFor(math.abs(delta), maxDelta), deltaColor, tip)
+    if displayMode == "Volume + delta"
+        // Outer circle = total volume; inner circle = |delta| on the same scale, so the
+        // inner/outer ratio shows how one-sided the candle was.
+        bubble(sizeFor(vol, maxVol), volumeColor, tip)
+        bubble(sizeFor(math.abs(delta), maxVol), deltaColor, tip)
+    else if displayMode == "Delta only"
+        bubble(sizeFor(math.abs(delta), maxDelta), deltaColor, tip)
     else
         // Draw the larger circle first so the smaller one stays visible on top.
         buyBigger = buyVol >= sellVol
