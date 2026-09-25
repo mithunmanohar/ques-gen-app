@@ -1,5 +1,5 @@
-//@version=5
-indicator("High Volume Zones - HTF", shorttitle="L-HV HTF V4", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, dynamic_requests = true)
+//@version=6
+indicator("High Volume Zones - HTF", shorttitle="L-HV HTF V5", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, dynamic_requests = true)
 
 // === DISPLAY SETTINGS ===
 show_historical = input.bool(true, "Show on Historical Candles", group="Display")
@@ -74,21 +74,22 @@ track_candles = input.int(5, "Candles to Track After Zone", minval=1, maxval=100
 track_bull_color = input.color(color.new(color.green, 80), "Green Candle Above Zone BG", group="Zone Tracking")
 track_bear_color = input.color(color.new(color.red, 80), "Red Candle Below Zone BG", group="Zone Tracking")
 
-// === NEW (V4): VOLUME TRADED INSIDE ZONE ===
-show_vol_circles = input.bool(true, "Mark Volume Traded Inside Zone", group="Zone Volume Circles", tooltip="When a later candle overlaps a high volume zone, draw a circle at the zone showing how much of that candle's volume traded inside the zone's price band.")
-circle_bars = input.int(20, "Bars to Watch After Zone", minval=1, maxval=200, group="Zone Volume Circles", tooltip="How many chart candles after the zone candle are checked for interaction with the zone")
-use_intrabar_vol = input.bool(false, "Use Intrabar Data for Volume Split", group="Zone Volume Circles", tooltip="ON = sum the volume of lower-timeframe bars that traded inside the zone (more accurate, needs a plan that supports the intrabar timeframe). OFF = estimate from the share of the candle's range that lies inside the zone.")
-circle_intrabar_tf = input.timeframe("1S", "Intrabar Timeframe", group="Zone Volume Circles", tooltip="Lower timeframe used for the volume split when the option above is ON. Must be lower than the chart timeframe.")
-circle_min_share = input.float(0.0, "Minimum Volume Share to Mark (%)", minval=0.0, maxval=100.0, step=1.0, group="Zone Volume Circles", tooltip="Volume inside the zone as % of the zone candle's volume. Interactions below this are not marked.")
-circle_small_pct = input.float(10.0, "Small Circle From (%)", minval=0.0, maxval=100.0, step=1.0, group="Zone Volume Circles", tooltip="Circle size grows with the volume share: below Small = tiny circle")
-circle_normal_pct = input.float(25.0, "Normal Circle From (%)", minval=0.0, maxval=100.0, step=1.0, group="Zone Volume Circles")
-circle_large_pct = input.float(50.0, "Large Circle From (%)", minval=0.0, maxval=100.0, step=1.0, group="Zone Volume Circles")
-buy_sell_method = input.string("Close Position", "Buy/Sell Split Method", options=["Close Position", "Candle Direction"], group="Zone Volume Circles", tooltip="Close Position = buy share is (close - low) / (high - low), the rest is sell | Candle Direction = up bar is all buy, down bar is all sell, doji is split 50/50. Applied per intrabar when intrabar data is on, otherwise to the chart candle.")
-buy_circle_color = input.color(color.new(color.lime, 20), "Buy Volume Circle", group="Zone Volume Circles")
-sell_circle_color = input.color(color.new(color.red, 20), "Sell Volume Circle", group="Zone Volume Circles")
-show_circle_text = input.bool(true, "Show Volume Number Next to Circle", group="Zone Volume Circles")
-buy_text_color = input.color(color.lime, "Buy Volume Text Color", group="Zone Volume Circles")
-sell_text_color = input.color(color.red, "Sell Volume Text Color", group="Zone Volume Circles")
+// === VOLUME TRADED INSIDE ZONE (buy / sell bubbles) ===
+grpVZ = "Zone Volume Bubbles"
+show_vol_circles = input.bool(true, "Mark Volume Traded Inside Zone", group=grpVZ, tooltip="When a later candle overlaps a high volume zone, draw a buy bubble (upper half of the zone) and a sell bubble (lower half) sized by the volume of that candle that traded inside the zone's price band.")
+circle_bars = input.int(20, "Bars to Watch After Zone", minval=1, maxval=200, group=grpVZ, tooltip="How many chart candles after the zone candle are checked for interaction with the zone")
+circle_intrabar_tf = input.timeframe("", "Intrabar Timeframe", group=grpVZ, tooltip="Lower timeframe used to split the candle's volume by price and into buy/sell. Leave on 'Chart' for automatic (1m for charts up to 4h; charts of 1 minute or less need '1S', which requires a plan with seconds data). If no intrabar data is available the split is estimated from the candle's range and where its close sits.")
+buy_sell_method = input.string("Bar Direction", "Buy/Sell Split Method", options=["Bar Direction", "Close Position"], group=grpVZ, tooltip="Bar Direction = each intrabar's volume is buying if it closed up, selling if it closed down, tick rule for flat bars | Close Position = buy share is (close - low) / (high - low), the rest is sell. Without intrabar data both are applied to the chart candle.")
+circle_min_share = input.float(0.0, "Minimum Volume Share to Mark (%)", minval=0.0, maxval=100.0, step=1.0, group=grpVZ, tooltip="Total volume inside the zone as % of the zone candle's volume. Interactions below this are not marked.")
+circle_full_share = input.float(50.0, "Max Bubble Size at Share (%)", minval=1.0, maxval=200.0, step=1.0, group=grpVZ, tooltip="Bubble reaches its maximum size when its buy (or sell) volume inside the zone equals this % of the zone candle's volume.")
+circle_scale = input.string("Area", "Bubble Scale", options=["Area", "Diameter"], group=grpVZ, tooltip="Area: bubble area is proportional to volume (sqrt scaling). Diameter: bubble width is proportional to volume.")
+circle_min_pt = input.int(4, "Min Bubble Size (pt)", minval=1, maxval=50, group=grpVZ)
+circle_max_pt = input.int(30, "Max Bubble Size (pt)", minval=2, maxval=100, group=grpVZ)
+buy_circle_color = input.color(color.new(color.teal, 30), "Buy Volume Bubble", group=grpVZ)
+sell_circle_color = input.color(color.new(color.red, 30), "Sell Volume Bubble", group=grpVZ)
+show_circle_text = input.bool(true, "Show Volume Number Next to Bubble", group=grpVZ)
+buy_text_color = input.color(color.teal, "Buy Volume Text Color", group=grpVZ)
+sell_text_color = input.color(color.red, "Sell Volume Text Color", group=grpVZ)
 
 // ====================================
 // CORE: Get Intrabar Data for HTF
@@ -376,39 +377,49 @@ get_sl_distance(zone_center, zone_height) =>
     sl_dist
 
 // ====================================
-// NEW (V4): Volume-in-zone helpers
+// Volume-in-zone helpers
 // ====================================
-// Intrabar OHLCV of the CURRENT chart candle (only requested when the intrabar split is enabled)
+// Automatic intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate
+auto_ltf() =>
+    sec = timeframe.in_seconds()
+    sec <= 60 ? "" : sec <= 14400 ? "1" : sec <= 86400 ? "5" : sec <= 604800 ? "60" : "240"
+
+vz_ltf = circle_intrabar_tf != "" ? circle_intrabar_tf : auto_ltf()
+vz_use_ltf = show_vol_circles and vz_ltf != "" and timeframe.in_seconds(vz_ltf) < timeframe.in_seconds()
+
+// Intrabar OHLCV of the CURRENT chart candle
 ib_vol = array.new<float>()
 ib_high = array.new<float>()
 ib_low = array.new<float>()
 ib_open = array.new<float>()
 ib_close = array.new<float>()
-if show_vol_circles and use_intrabar_vol
-    [v_arr, h_arr, l_arr, o_arr, c_arr] = request.security_lower_tf(syminfo.tickerid, circle_intrabar_tf, [volume, high, low, open, close])
+if vz_use_ltf
+    [v_arr, h_arr, l_arr, o_arr, c_arr] = request.security_lower_tf(syminfo.tickerid, vz_ltf, [volume, high, low, open, close])
     ib_vol := v_arr
     ib_high := h_arr
     ib_low := l_arr
     ib_open := o_arr
     ib_close := c_arr
 
-// Share of a bar's volume attributed to buyers (0..1); the remainder is sell volume
-buy_share(b_open, b_high, b_low, b_close) =>
+// Share of a bar's volume attributed to buyers (0..1); the remainder is sell volume.
+// prev_close is used by the tick rule for flat bars (na = unknown -> 50/50).
+buy_share(b_open, b_high, b_low, b_close, prev_close) =>
     share = 0.5
     if buy_sell_method == "Close Position"
         share := b_high > b_low ? (b_close - b_low) / (b_high - b_low) : 0.5
     else
-        share := b_close > b_open ? 1.0 : b_close < b_open ? 0.0 : 0.5
+        dir = b_close > b_open ? 1 : b_close < b_open ? -1 : na(prev_close) ? 0 : b_close > prev_close ? 1 : b_close < prev_close ? -1 : 0
+        share := dir > 0 ? 1.0 : dir < 0 ? 0.0 : 0.5
     share
 
 // Estimate how much of the current chart candle's volume traded between zone_bottom and zone_top,
 // split into buy and sell volume.
 // Intrabar mode: each intrabar's volume is split by the share of its range that lies inside the band,
-// then divided into buy/sell with buy_share(). Fallback: same logic applied to the chart candle.
+// then attributed to buy/sell with buy_share(). Fallback: same logic applied to the chart candle.
 volume_in_band(zone_top, zone_bottom) =>
     buy_in = 0.0
     sell_in = 0.0
-    if use_intrabar_vol and array.size(ib_vol) > 0
+    if vz_use_ltf and array.size(ib_vol) > 0
         for i = 0 to array.size(ib_vol) - 1
             b_high = array.get(ib_high, i)
             b_low = array.get(ib_low, i)
@@ -422,7 +433,8 @@ volume_in_band(zone_top, zone_bottom) =>
                     v_in := b_vol * overlap / (b_high - b_low)
                 else if b_high >= zone_bottom and b_high <= zone_top
                     v_in := b_vol
-                bs = buy_share(b_open, b_high, b_low, b_close)
+                prev_c = i > 0 ? array.get(ib_close, i - 1) : close[1]
+                bs = buy_share(b_open, b_high, b_low, b_close, prev_c)
                 buy_in += v_in * bs
                 sell_in += v_in * (1.0 - bs)
     else
@@ -433,17 +445,20 @@ volume_in_band(zone_top, zone_bottom) =>
             v_in := volume * overlap / candle_range
         else if close >= zone_bottom and close <= zone_top
             v_in := volume
-        bs = buy_share(open, high, low, close)
+        bs = buy_share(open, high, low, close, close[1])
         buy_in := v_in * bs
         sell_in := v_in * (1.0 - bs)
     [buy_in, sell_in]
 
-// Compact volume text: 1.2K / 3.4M / 5.6B
-format_volume(v) =>
-    v >= 1e9 ? str.tostring(v / 1e9, "#.##") + "B" :
-      v >= 1e6 ? str.tostring(v / 1e6, "#.##") + "M" :
-      v >= 1e3 ? str.tostring(v / 1e3, "#.#") + "K" :
-      str.tostring(v, "#")
+// Bubble size in points from a volume share (% of the zone candle's volume)
+bubble_size(share_pct) =>
+    ratio = math.min(math.max(share_pct / circle_full_share, 0.0), 1.0)
+    scaled = circle_scale == "Area" ? math.sqrt(ratio) : ratio
+    int(math.round(circle_min_pt + (circle_max_pt - circle_min_pt) * scaled))
+
+// Bubble = "●" glyph on an invisible label, so size is continuous (typographic points)
+bubble(y, sz, col, tip) =>
+    label.new(bar_index, y, "●", style=label.style_label_center, color=color.new(color.white, 100), textcolor=col, size=sz, tooltip=tip)
 
 // ====================================
 // GET HTF DATA
@@ -491,7 +506,7 @@ var array<float> alert_zone_scores = array.new<float>()
 var array<float> trk_zone_top = array.new<float>()
 var array<float> trk_zone_bottom = array.new<float>()
 var array<int> trk_zone_bar = array.new<int>()
-var array<float> trk_zone_vol = array.new<float>()   // NEW (V4): volume of the candle that created the zone
+var array<float> trk_zone_vol = array.new<float>()   // volume of the candle that created the zone
 
 // Determine if this is a confirmed bar close (for alerts)
 is_bar_close = false
@@ -642,17 +657,11 @@ if enable_tracking and array.size(trk_zone_bar) > 0
 bgcolor(track_bg, title="Post-Zone Candle Tracking")
 
 // ====================================
-// NEW (V4): VOLUME TRADED INSIDE ZONE -> CIRCLE
+// VOLUME TRADED INSIDE ZONE -> BUY / SELL BUBBLES
 // ====================================
 // For every tracked zone, if the current chart candle overlaps the zone's price band,
-// estimate the buy and sell volume that traded inside the band and draw two circles on this bar:
+// estimate the buy and sell volume that traded inside the band and draw two bubbles on this bar:
 // buy volume in the upper half of the zone, sell volume in the lower half.
-// Circle size grows with that volume as a share of the zone candle's volume.
-circle_size_for(share) =>
-    share >= circle_large_pct ? size.large :
-      share >= circle_normal_pct ? size.normal :
-      share >= circle_small_pct ? size.small : size.tiny
-
 if show_vol_circles and array.size(trk_zone_bar) > 0
     for i = 0 to array.size(trk_zone_bar) - 1
         bars_since_zone = bar_index - array.get(trk_zone_bar, i)
@@ -671,21 +680,25 @@ if show_vol_circles and array.size(trk_zone_bar) > 0
                     buy_share_pct = zone_vol > 0 ? (buy_vol / zone_vol) * 100 : 0.0
                     sell_share_pct = zone_vol > 0 ? (sell_vol / zone_vol) * 100 : 0.0
                     delta = buy_vol - sell_vol
-                    tip = "Buy volume inside zone: " + format_volume(buy_vol) +
-                          "\nSell volume inside zone: " + format_volume(sell_vol) +
-                          "\nDelta: " + (delta >= 0 ? "+" : "-") + format_volume(math.abs(delta)) +
+                    delta_pct = total_in > 0 ? delta / total_in * 100 : 0.0
+                    tip = "Buy volume inside zone: " + str.tostring(buy_vol, format.volume) +
+                          "\nSell volume inside zone: " + str.tostring(sell_vol, format.volume) +
+                          "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(delta_pct, "#.#") + "%)" +
                           "\nTotal share of zone candle volume: " + str.tostring(total_share, "#.#") + "%" +
-                          "\nZone: " + str.tostring(z_bottom, format.mintick) + " - " + str.tostring(z_top, format.mintick)
-                    // Buy circle (upper half of the zone)
-                    label.new(bar_index, z_center + z_quarter, "", style=label.style_circle, color=buy_circle_color, size=circle_size_for(buy_share_pct), tooltip=tip)
-                    // Sell circle (lower half of the zone)
-                    label.new(bar_index, z_center - z_quarter, "", style=label.style_circle, color=sell_circle_color, size=circle_size_for(sell_share_pct), tooltip=tip)
+                          "\nZone: " + str.tostring(z_bottom, format.mintick) + " - " + str.tostring(z_top, format.mintick) +
+                          "\nSplit from: " + (vz_use_ltf and array.size(ib_vol) > 0 ? vz_ltf + " intrabars" : "candle range (rough estimate)")
+                    bubble(z_center + z_quarter, bubble_size(buy_share_pct), buy_circle_color, tip)
+                    bubble(z_center - z_quarter, bubble_size(sell_share_pct), sell_circle_color, tip)
                     if show_circle_text
-                        // Transparent label bodies so only the numbers show, placed just right of each circle
-                        label.new(bar_index, z_center + z_quarter, format_volume(buy_vol), style=label.style_label_left,
+                        // Transparent label bodies so only the numbers show, placed just right of each bubble
+                        label.new(bar_index, z_center + z_quarter, str.tostring(buy_vol, format.volume), style=label.style_label_left,
                                   color=color.new(color.black, 100), textcolor=buy_text_color, size=size.small, tooltip=tip)
-                        label.new(bar_index, z_center - z_quarter, format_volume(sell_vol), style=label.style_label_left,
+                        label.new(bar_index, z_center - z_quarter, str.tostring(sell_vol, format.volume), style=label.style_label_left,
                                   color=color.new(color.black, 100), textcolor=sell_text_color, size=size.small, tooltip=tip)
+
+// Guard: this indicator is meaningless without volume data
+if barstate.islast and na(volume)
+    runtime.error("This symbol has no volume data.")
 
 // === CONSOLIDATED ALERT (One per candle with zones) ===
 if enable_alerts and not alert_on_all_zones and is_bar_close and zones_created_count > 0
