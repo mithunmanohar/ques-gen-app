@@ -17,13 +17,13 @@ maxSize    = input.int(40, "Max circle size (pt)", minval = 2, group = grpCircle
 grpFilter = "Anomaly filter (current day)"
 filterMode = input.string("Relative volume", "Show circles when", group = grpFilter,
              options = ["Relative volume", "Z-score", "Both", "Either", "Off (every candle)"],
-             tooltip = "Baseline = the previous candles of the current day only (resets every session).\nRelative volume: volume >= threshold x average of the baseline.\nZ-score: volume is more than N standard deviations above the baseline average.\nBoth / Either: combine the two tests.")
+             tooltip = "Baseline = the previous candles of the current day only (resets every session).\nRelative volume: volume >= threshold x median of the baseline.\nZ-score: volume is more than N standard deviations above the baseline average.\nBoth / Either: combine the two tests.")
 baseWindow = input.int(12, "Baseline window (candles)", minval = 2, group = grpFilter,
              tooltip = "How many of today's previous candles form the baseline. 12 x 5m = the last hour. Uses whatever is available early in the day.")
 minBase    = input.int(3, "Min candles before signalling", minval = 2, group = grpFilter,
              tooltip = "No signals until today has at least this many earlier candles (e.g. 3 = first signal possible at 9:30 on NSE).")
-rvolThr    = input.float(2.0, "Relative volume threshold (x)", minval = 1.0, step = 0.1, group = grpFilter)
-zThr       = input.float(2.0, "Z-score threshold (sigma)", minval = 0.5, step = 0.1, group = grpFilter)
+rvolThr    = input.float(1.5, "Relative volume threshold (x)", minval = 1.0, step = 0.1, group = grpFilter)
+zThr       = input.float(1.5, "Z-score threshold (sigma)", minval = 0.5, step = 0.1, group = grpFilter)
 showDays   = input.string("Today only", "Show on", options = ["Today only", "All days"], group = grpFilter)
 showNormal = input.bool(false, "Faint dot on normal candles", group = grpFilter)
 
@@ -74,16 +74,18 @@ var array<float> dayVols = array.new<float>()
 if timeframe.change("D")
     dayVols.clear()
 
+float baseMed = na
 float baseAvg = na
 float baseSd  = na
 baseN = math.min(baseWindow, dayVols.size())
 if baseN >= minBase
     recent  = dayVols.slice(dayVols.size() - baseN, dayVols.size())
+    baseMed := recent.median()   // median: one earlier spike doesn't raise the bar for the next
     baseAvg := recent.avg()
     baseSd  := recent.stdev()
 dayVols.push(vol)   // current candle joins the baseline only for later candles
 
-rvol  = baseAvg > 0 ? vol / baseAvg : na
+rvol  = baseMed > 0 ? vol / baseMed : na
 zScore = baseSd > 0 ? (vol - baseAvg) / baseSd : na
 rvolHit = rvol >= rvolThr
 zHit    = zScore >= zThr
