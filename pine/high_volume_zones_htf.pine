@@ -17,6 +17,7 @@ time_weight = input.float(0.5, "Time Weight", minval=0.0, maxval=1.0, step=0.1, 
 
 // === ANALYSIS SETTINGS ===
 price_levels = input.int(30, "Price Levels per Candle", minval=5, maxval=500, group="Analysis")
+profile_ltf_input = input.timeframe("", "Intrabar Timeframe (current TF mode)", group="Analysis", tooltip="Lower timeframe used to build the volume profile of each candle when HTF Analysis is OFF. Leave on 'Chart' for automatic (1m for charts up to 4h). Charts of 1 minute or less need '1S', which requires a Premium or higher plan; without it the profile is estimated from the candle's OHLC.")
 
 // === HIGH VOLUME ZONE SETTINGS ===
 zones_to_show = input.int(2, "Number of High Volume Zones", minval=1, maxval=30, group="High Volume Zones")
@@ -90,6 +91,18 @@ sell_circle_color = input.color(color.new(color.red, 30), "Sell Volume Bubble", 
 show_circle_text = input.bool(true, "Show Volume Number Next to Bubble", group=grpVZ)
 buy_text_color = input.color(color.teal, "Buy Volume Text Color", group=grpVZ)
 sell_text_color = input.color(color.red, "Sell Volume Text Color", group=grpVZ)
+
+// ====================================
+// Intrabar timeframe selection
+// ====================================
+// Automatic intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate
+auto_ltf() =>
+    sec = timeframe.in_seconds()
+    sec <= 60 ? "" : sec <= 14400 ? "1" : sec <= 86400 ? "5" : sec <= 604800 ? "60" : "240"
+
+// Intrabar timeframe for the per-candle profile (current TF mode only)
+profile_ltf = profile_ltf_input != "" ? profile_ltf_input : auto_ltf()
+profile_use_ltf = profile_ltf != "" and timeframe.in_seconds(profile_ltf) < timeframe.in_seconds()
 
 // ====================================
 // CORE: Get Intrabar Data for HTF
@@ -178,8 +191,19 @@ get_htf_intrabar_data(candle_high, candle_low, candle_open, candle_close, candle
                         array.set(time_at_price, i, level_time)
                         array.set(volume_at_price, i, level_volume)
         else
-            // Current timeframe mode: use 1-second intrabar data
-            [vol_data, high_data, low_data, close_data, open_data] = request.security_lower_tf(syminfo.tickerid, "1S", [volume, high, low, close, open])
+            // Current timeframe mode: use intrabar data at the selected lower timeframe (if any)
+            vol_data = array.new<float>()
+            high_data = array.new<float>()
+            low_data = array.new<float>()
+            close_data = array.new<float>()
+            open_data = array.new<float>()
+            if profile_use_ltf
+                [v_d, h_d, l_d, c_d, o_d] = request.security_lower_tf(syminfo.tickerid, profile_ltf, [volume, high, low, close, open])
+                vol_data := v_d
+                high_data := h_d
+                low_data := l_d
+                close_data := c_d
+                open_data := o_d
             
             if array.size(vol_data) > 0
                 for i = 0 to array.size(vol_data) - 1
@@ -379,11 +403,6 @@ get_sl_distance(zone_center, zone_height) =>
 // ====================================
 // Volume-in-zone helpers
 // ====================================
-// Automatic intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate
-auto_ltf() =>
-    sec = timeframe.in_seconds()
-    sec <= 60 ? "" : sec <= 14400 ? "1" : sec <= 86400 ? "5" : sec <= 604800 ? "60" : "240"
-
 vz_ltf = circle_intrabar_tf != "" ? circle_intrabar_tf : auto_ltf()
 vz_use_ltf = show_vol_circles and vz_ltf != "" and timeframe.in_seconds(vz_ltf) < timeframe.in_seconds()
 
