@@ -1,0 +1,761 @@
+//@version=6
+indicator("High Volume Zones - HTF", shorttitle="L-HV HTF V5", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, dynamic_requests = true)
+
+// === DISPLAY SETTINGS ===
+show_historical = input.bool(true, "Show on Historical Candles", group="Display")
+show_realtime = input.bool(true, "Show on Current Developing Candle", group="Display")
+extend_bars = input.int(60, "Extend Zones (Bars)", minval=0, maxval=100, group="Display")
+
+// === HIGHER TIMEFRAME SETTINGS ===
+htf_timeframe = input.timeframe("5", "Higher Timeframe for Analysis", group="Higher Timeframe", tooltip="Analyze this timeframe's volume zones on current chart")
+use_htf = input.bool(true, "Enable HTF Analysis", group="Higher Timeframe", tooltip="When enabled, analyzes HTF candles. When disabled, analyzes current timeframe")
+htf_draw_mode = input.string("HTF Change Only", "HTF Drawing Mode", options=["HTF Change Only", "HTF Change + Current Bar"], group="Higher Timeframe", tooltip="HTF Change Only = Draw only when HTF bar completes | HTF Change + Current Bar = Also update on developing HTF bar")
+
+// === CALCULATION MODE ===
+calculation_mode = input.string("Time + Volume", "Calculation Mode", options=["Time Only", "Volume Only", "Time + Volume"], group="Calculation", tooltip="Time Only = Velocity-based | Volume Only = Pure volume | Time + Volume = Composite")
+time_weight = input.float(0.5, "Time Weight", minval=0.0, maxval=1.0, step=0.1, group="Calculation", tooltip="0=Pure Volume, 1=Pure Time, 0.5=Balanced")
+
+// === ANALYSIS SETTINGS ===
+price_levels = input.int(30, "Price Levels per Candle", minval=5, maxval=500, group="Analysis")
+profile_ltf_input = input.timeframe("", "Intrabar Timeframe (current TF mode)", group="Analysis", tooltip="Lower timeframe used to build the volume profile of each candle when HTF Analysis is OFF. Leave on 'Chart' for automatic (1m for charts up to 4h). Charts of 1 minute or less need '1S', which requires a Premium or higher plan; without it the profile is estimated from the candle's OHLC.")
+
+// === HIGH VOLUME ZONE SETTINGS ===
+zones_to_show = input.int(2, "Number of High Volume Zones", minval=1, maxval=30, group="High Volume Zones")
+min_threshold = input.float(5.0, "Minimum Threshold (%)", minval=0.0, maxval=100.0, step=0.1, group="High Volume Zones", tooltip="Only show zones above this percentage")
+
+// === CENTERLINE SETTINGS ===
+show_centerline = input.bool(true, "Show Centerline", group="Centerline")
+centerline_width = input.int(2, "Centerline Width", minval=1, maxval=5, group="Centerline")
+bullish_centerline_color = input.color(color.green, "Bullish Candle Centerline", group="Centerline")
+bearish_centerline_color = input.color(color.red, "Bearish Candle Centerline", group="Centerline")
+neutral_centerline_color = input.color(color.orange, "Neutral/Doji Candle Centerline", group="Centerline")
+
+// === ZONE LABELS ===
+show_labels = input.bool(true, "Show Zone Labels", group="Labels")
+label_position = input.string("Right", "Label Position", options=["Left", "Right", "Center"], group="Labels")
+label_size = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large"], group="Labels")
+label_text_color = input.color(color.rgb(142, 238, 8), "Label Text Color", group="Labels")
+
+// === ZONE COLORS BY CANDLE TYPE ===
+bullish_zone_color = input.color(#0066ff78, "Bullish Candle Zones", group="Zone Colors", tooltip="Color for zones on bullish candles")
+bearish_zone_color = input.color(#0066ff78, "Bearish Candle Zones", group="Zone Colors", tooltip="Color for zones on bearish candles")
+neutral_zone_color = input.color(#0066ff78, "Neutral/Doji Candle Zones", group="Zone Colors", tooltip="Color for zones on doji/neutral candles")
+doji_threshold = input.float(0.1, "Doji Body Ratio", minval=0.01, maxval=0.5, step=0.01, group="Zone Colors", tooltip="Body size relative to range to classify as doji")
+
+// === IMPORTANCE FILTERS ===
+enable_volume_filter = input.bool(true, "Enable Volume Filter", group="Filters")
+volume_threshold = input.float(1.5, "Volume Multiplier", minval=0.1, maxval=5.0, step=0.1, group="Filters")
+enable_range_filter = input.bool(true, "Enable Range Filter", group="Filters")
+range_threshold = input.float(1.2, "Range Multiplier", minval=0.5, maxval=3.0, step=0.1, group="Filters")
+enable_body_filter = input.bool(true, "Enable Body Filter", group="Filters")
+body_ratio = input.float(0.3, "Minimum Body Ratio", minval=0.1, maxval=0.8, step=0.05, group="Filters")
+
+// === STOP LOSS SETTINGS ===
+show_sl_lines = input.bool(true, "Show Stop Loss Lines", group="Stop Loss")
+sl_method = input.string("ATR Multiple", "SL Method", options=["ATR Multiple", "Fixed Points", "Zone Multiple", "Percentage"], group="Stop Loss", tooltip="ATR=Adaptive | Fixed=Simple | Zone=Based on zone height | Percentage=Price %")
+atr_period = input.int(14, "ATR Period", minval=5, maxval=50, group="Stop Loss")
+atr_multiplier = input.float(1.2, "ATR Multiplier", minval=0.5, maxval=3.0, step=0.1, group="Stop Loss", tooltip="Recommended: 1.0-1.5 for 5min zones")
+fixed_points = input.float(40, "Fixed Points", minval=10, maxval=200, step=5, group="Stop Loss", tooltip="For Nifty: 35-50 points recommended")
+zone_multiplier = input.float(2.5, "Zone Height Multiplier", minval=1.0, maxval=5.0, step=0.5, group="Stop Loss", tooltip="SL = Zone Height × This")
+percentage = input.float(0.20, "Percentage (%)", minval=0.05, maxval=1.0, step=0.05, group="Stop Loss", tooltip="SL = Zone Price × This %")
+min_sl_points = input.float(25, "Minimum SL Points", minval=0, maxval=100, step=5, group="Stop Loss", tooltip="Minimum SL distance regardless of method")
+sl_line_color = input.color(color.rgb(255, 82, 82, 80), "SL Line Color", group="Stop Loss")
+sl_line_style = input.string("Dashed", "SL Line Style", options=["Solid", "Dashed", "Dotted"], group="Stop Loss")
+sl_line_width = input.int(1, "SL Line Width", minval=1, maxval=5, group="Stop Loss")
+
+// === ALERT SETTINGS ===
+enable_alerts = input.bool(true, "Enable Alerts", group="Alerts", tooltip="Alert when new high volume zones are formed on closed candles")
+alert_on_all_zones = input.bool(false, "Alert on Every Zone", group="Alerts", tooltip="If enabled, alerts for each zone. If disabled, one alert per candle with zones")
+include_zone_prices = input.bool(true, "Include Zone Prices in Alert", group="Alerts", tooltip="Show individual zone price levels in alert message")
+alert_frequency = input.string("Once Per Bar Close", "Alert Frequency", options=["Once Per Bar Close", "Once Per Bar"], group="Alerts")
+
+// === POST-ZONE CANDLE TRACKING ===
+enable_tracking = input.bool(true, "Enable Post-Zone Candle Tracking", group="Zone Tracking", tooltip="After a zone forms, watch the next N candles. Green candle fully above the zone (low > zone top) = green background. Red candle fully below the zone (high < zone bottom) = red background.")
+track_candles = input.int(5, "Candles to Track After Zone", minval=1, maxval=100, group="Zone Tracking")
+track_bull_color = input.color(color.new(color.green, 80), "Green Candle Above Zone BG", group="Zone Tracking")
+track_bear_color = input.color(color.new(color.red, 80), "Red Candle Below Zone BG", group="Zone Tracking")
+
+// === VOLUME TRADED INSIDE ZONE (buy / sell bubbles) ===
+grpVZ = "Zone Volume Bubbles"
+show_vol_circles = input.bool(true, "Mark Volume Traded Inside Zone", group=grpVZ, tooltip="When a later candle overlaps a high volume zone, draw a buy bubble (upper half of the zone) and a sell bubble (lower half) sized by the volume of that candle that traded inside the zone's price band.")
+circle_bars = input.int(20, "Bars to Watch After Zone", minval=1, maxval=200, group=grpVZ, tooltip="How many chart candles after the zone candle are checked for interaction with the zone")
+circle_intrabar_tf = input.timeframe("", "Intrabar Timeframe", group=grpVZ, tooltip="Lower timeframe used to split the candle's volume by price and into buy/sell. Leave on 'Chart' for automatic (1m for charts up to 4h; charts of 1 minute or less need '1S', which requires a plan with seconds data). If no intrabar data is available the split is estimated from the candle's range and where its close sits.")
+buy_sell_method = input.string("Bar Direction", "Buy/Sell Split Method", options=["Bar Direction", "Close Position"], group=grpVZ, tooltip="Bar Direction = each intrabar's volume is buying if it closed up, selling if it closed down, tick rule for flat bars | Close Position = buy share is (close - low) / (high - low), the rest is sell. Without intrabar data both are applied to the chart candle.")
+circle_min_share = input.float(0.0, "Minimum Volume Share to Mark (%)", minval=0.0, maxval=100.0, step=1.0, group=grpVZ, tooltip="Total volume inside the zone as % of the zone candle's volume. Interactions below this are not marked.")
+circle_ref_mode = input.string("Auto (largest bubble in lookback)", "Size Reference", options=["Auto (largest bubble in lookback)", "Fixed volume"], group=grpVZ, tooltip="Auto: a bubble reaches max size when its volume equals the largest buy/sell bubble volume seen in the lookback. Fixed: max size at the volume given below.")
+circle_lookback = input.int(200, "Size Normalization Lookback (bars)", minval=1, maxval=2000, group=grpVZ)
+circle_ref_vol = input.float(20000, "Max Bubble at Volume (Fixed mode)", minval=1, step=500, group=grpVZ)
+circle_scale = input.string("Area", "Bubble Scale", options=["Area", "Diameter"], group=grpVZ, tooltip="Area: bubble area is proportional to volume (sqrt scaling). Diameter: bubble width is proportional to volume.")
+circle_min_pt = input.int(4, "Min Bubble Size (pt)", minval=1, maxval=50, group=grpVZ)
+circle_max_pt = input.int(50, "Max Bubble Size (pt)", minval=2, maxval=100, group=grpVZ)
+buy_circle_color = input.color(color.new(color.teal, 30), "Buy Volume Bubble", group=grpVZ)
+sell_circle_color = input.color(color.new(color.red, 30), "Sell Volume Bubble", group=grpVZ)
+
+// ====================================
+// Intrabar timeframe selection
+// ====================================
+// Automatic intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate
+auto_ltf() =>
+    sec = timeframe.in_seconds()
+    sec <= 60 ? "" : sec <= 14400 ? "1" : sec <= 86400 ? "5" : sec <= 604800 ? "60" : "240"
+
+// Intrabar timeframe for the per-candle profile (current TF mode only)
+profile_ltf = profile_ltf_input != "" ? profile_ltf_input : auto_ltf()
+profile_use_ltf = profile_ltf != "" and timeframe.in_seconds(profile_ltf) < timeframe.in_seconds()
+
+// ====================================
+// CORE: Get Intrabar Data for HTF
+// ====================================
+get_htf_intrabar_data(candle_high, candle_low, candle_open, candle_close, candle_volume, is_htf) =>
+    time_at_price = array.new<float>()
+    volume_at_price = array.new<float>()
+    price_levels_array = array.new<float>()
+    
+    current_high = candle_high
+    current_low = candle_low
+    total_time_score = 0.0
+    total_volume = 0.0
+    
+    if current_high > current_low
+        price_step = (current_high - current_low) / price_levels
+        
+        // Initialize price levels
+        for i = 0 to price_levels - 1
+            price_level = current_low + (i * price_step)
+            array.push(price_levels_array, price_level)
+            array.push(time_at_price, 0.0)
+            array.push(volume_at_price, 0.0)
+        
+        // If HTF mode, get all 1-min bars within the HTF candle
+        if is_htf
+            [vol_data, high_data, low_data, close_data, open_data] = request.security_lower_tf(syminfo.tickerid, timeframe.period, [volume, high, low, close, open])
+            
+            if array.size(vol_data) > 0
+                // Process each 1-minute bar within the HTF candle
+                for i = 0 to array.size(vol_data) - 1
+                    ltf_high = array.get(high_data, i)
+                    ltf_low = array.get(low_data, i)
+                    ltf_close = array.get(close_data, i)
+                    ltf_open = array.get(open_data, i)
+                    ltf_volume = array.get(vol_data, i)
+                    
+                    if not na(ltf_high) and not na(ltf_low) and not na(ltf_close) and not na(ltf_open) and not na(ltf_volume)
+                        price_range_1m = ltf_high - ltf_low
+                        price_movement = math.abs(ltf_close - ltf_open)
+                        velocity = price_range_1m > 0 ? price_movement / price_range_1m : 0
+                        time_score = velocity > 0 ? (1.0 / (velocity + 0.1)) : 10.0
+                        total_time_score += time_score
+                        total_volume += ltf_volume
+                        
+                        if price_range_1m > 0
+                            start_level = math.floor((ltf_low - current_low) / price_step)
+                            end_level = math.floor((ltf_high - current_low) / price_step)
+                            start_level := math.max(0, math.min(price_levels - 1, start_level))
+                            end_level := math.max(0, math.min(price_levels - 1, end_level))
+                            levels_covered = math.max(1, end_level - start_level + 1)
+                            close_position_in_range = (ltf_close - ltf_low) / price_range_1m
+                            
+                            for level = start_level to end_level
+                                if level >= 0 and level < array.size(time_at_price)
+                                    level_position = levels_covered > 1 ? (level - start_level) / (levels_covered - 1) : 0.5
+                                    proximity_weight = 1.0 - math.abs(level_position - close_position_in_range)
+                                    level_time_score = time_score * proximity_weight / levels_covered
+                                    current_time = array.get(time_at_price, level)
+                                    array.set(time_at_price, level, current_time + level_time_score)
+                                    level_volume = ltf_volume * proximity_weight / levels_covered
+                                    current_volume = array.get(volume_at_price, level)
+                                    array.set(volume_at_price, level, current_volume + level_volume)
+                        else
+                            level_index = math.floor((ltf_close - current_low) / price_step)
+                            level_index := math.max(0, math.min(price_levels - 1, level_index))
+                            if level_index >= 0 and level_index < array.size(time_at_price)
+                                current_time = array.get(time_at_price, level_index)
+                                array.set(time_at_price, level_index, current_time + time_score)
+                                current_volume = array.get(volume_at_price, level_index)
+                                array.set(volume_at_price, level_index, current_volume + ltf_volume)
+            else
+                // Fallback: use HTF OHLC to estimate distribution
+                price_range_overall = current_high - current_low
+                total_time_score := 100.0
+                total_volume := candle_volume
+                
+                if price_range_overall > 0
+                    for i = 0 to price_levels - 1
+                        level_price = array.get(price_levels_array, i)
+                        distance_from_open = math.abs(level_price - candle_open) / price_range_overall
+                        distance_from_close = math.abs(level_price - candle_close) / price_range_overall
+                        proximity_score = math.exp(-distance_from_open * 2) + math.exp(-distance_from_close * 2)
+                        level_time = total_time_score * proximity_score / price_levels
+                        level_volume = total_volume * proximity_score / price_levels
+                        array.set(time_at_price, i, level_time)
+                        array.set(volume_at_price, i, level_volume)
+        else
+            // Current timeframe mode: use intrabar data at the selected lower timeframe (if any)
+            vol_data = array.new<float>()
+            high_data = array.new<float>()
+            low_data = array.new<float>()
+            close_data = array.new<float>()
+            open_data = array.new<float>()
+            if profile_use_ltf
+                [v_d, h_d, l_d, c_d, o_d] = request.security_lower_tf(syminfo.tickerid, profile_ltf, [volume, high, low, close, open])
+                vol_data := v_d
+                high_data := h_d
+                low_data := l_d
+                close_data := c_d
+                open_data := o_d
+            
+            if array.size(vol_data) > 0
+                for i = 0 to array.size(vol_data) - 1
+                    ltf_high = array.get(high_data, i)
+                    ltf_low = array.get(low_data, i)
+                    ltf_close = array.get(close_data, i)
+                    ltf_open = array.get(open_data, i)
+                    ltf_volume = array.get(vol_data, i)
+                    
+                    if not na(ltf_high) and not na(ltf_low) and not na(ltf_close) and not na(ltf_open) and not na(ltf_volume)
+                        price_range_1s = ltf_high - ltf_low
+                        price_movement = math.abs(ltf_close - ltf_open)
+                        velocity = price_range_1s > 0 ? price_movement / price_range_1s : 0
+                        time_score = velocity > 0 ? (1.0 / (velocity + 0.1)) : 10.0
+                        total_time_score += time_score
+                        total_volume += ltf_volume
+                        
+                        if price_range_1s > 0
+                            start_level = math.floor((ltf_low - current_low) / price_step)
+                            end_level = math.floor((ltf_high - current_low) / price_step)
+                            start_level := math.max(0, math.min(price_levels - 1, start_level))
+                            end_level := math.max(0, math.min(price_levels - 1, end_level))
+                            levels_covered = math.max(1, end_level - start_level + 1)
+                            close_position_in_range = (ltf_close - ltf_low) / price_range_1s
+                            
+                            for level = start_level to end_level
+                                if level >= 0 and level < array.size(time_at_price)
+                                    level_position = levels_covered > 1 ? (level - start_level) / (levels_covered - 1) : 0.5
+                                    proximity_weight = 1.0 - math.abs(level_position - close_position_in_range)
+                                    level_time_score = time_score * proximity_weight / levels_covered
+                                    current_time = array.get(time_at_price, level)
+                                    array.set(time_at_price, level, current_time + level_time_score)
+                                    level_volume = ltf_volume * proximity_weight / levels_covered
+                                    current_volume = array.get(volume_at_price, level)
+                                    array.set(volume_at_price, level, current_volume + level_volume)
+                        else
+                            level_index = math.floor((ltf_close - current_low) / price_step)
+                            level_index := math.max(0, math.min(price_levels - 1, level_index))
+                            if level_index >= 0 and level_index < array.size(time_at_price)
+                                current_time = array.get(time_at_price, level_index)
+                                array.set(time_at_price, level_index, current_time + time_score)
+                                current_volume = array.get(volume_at_price, level_index)
+                                array.set(volume_at_price, level_index, current_volume + ltf_volume)
+            else
+                // Fallback
+                price_range_overall = current_high - current_low
+                total_time_score := 100.0
+                total_volume := candle_volume
+                
+                if price_range_overall > 0
+                    for i = 0 to price_levels - 1
+                        level_price = array.get(price_levels_array, i)
+                        distance_from_open = math.abs(level_price - candle_open) / price_range_overall
+                        distance_from_close = math.abs(level_price - candle_close) / price_range_overall
+                        proximity_score = math.exp(-distance_from_open * 2) + math.exp(-distance_from_close * 2)
+                        level_time = total_time_score * proximity_score / price_levels
+                        level_volume = total_volume * proximity_score / price_levels
+                        array.set(time_at_price, i, level_time)
+                        array.set(volume_at_price, i, level_volume)
+    
+    [time_at_price, volume_at_price, price_levels_array, total_time_score, total_volume]
+
+// ====================================
+// Get Active Scores Based on Mode
+// ====================================
+get_active_scores(time_array, volume_array, total_time, total_volume, mode, weight) =>
+    score_array = array.new<float>()
+    if array.size(time_array) > 0
+        for i = 0 to array.size(time_array) - 1
+            time_value = array.get(time_array, i)
+            volume_value = array.get(volume_array, i)
+            score = 0.0
+            if mode == "Time Only"
+                score := time_value
+            else if mode == "Volume Only"
+                score := volume_value
+            else
+                time_percent = total_time > 0 ? (time_value / total_time) * 100 : 0
+                volume_percent = total_volume > 0 ? (volume_value / total_volume) * 100 : 0
+                score := (weight * time_percent) + ((1 - weight) * volume_percent)
+            array.push(score_array, score)
+    score_array
+
+// ====================================
+// Find HIGHEST Score Zones (High Volume)
+// ====================================
+get_highest_zones(score_array, price_array, num_zones) =>
+    if array.size(score_array) < num_zones
+        array.new<float>()
+    else
+        indices = array.new<int>()
+        for i = 0 to array.size(score_array) - 1
+            array.push(indices, i)
+        
+        for i = 0 to array.size(indices) - 2
+            for j = 0 to array.size(indices) - 2 - i
+                idx1 = array.get(indices, j)
+                idx2 = array.get(indices, j + 1)
+                score1 = array.get(score_array, idx1)
+                score2 = array.get(score_array, idx2)
+                if score1 < score2
+                    array.set(indices, j, idx2)
+                    array.set(indices, j + 1, idx1)
+        
+        zones = array.new<float>()
+        for i = 0 to math.min(num_zones - 1, array.size(indices) - 1)
+            zone_idx = array.get(indices, i)
+            zone_price = array.get(price_array, zone_idx)
+            zone_score = array.get(score_array, zone_idx)
+            array.push(zones, zone_price)
+            array.push(zones, zone_score)
+        zones
+
+// ====================================
+// Get Zone Color Based on Candle Type
+// ====================================
+get_candle_type_color(candle_close, candle_open, candle_high, candle_low) =>
+    body_size = math.abs(candle_close - candle_open)
+    candle_range = candle_high - candle_low
+    is_doji = candle_range > 0 ? (body_size / candle_range) < doji_threshold : true
+    
+    color_result = neutral_zone_color
+    if is_doji
+        color_result := neutral_zone_color
+    else if candle_close >= candle_open
+        color_result := bullish_zone_color
+    else
+        color_result := bearish_zone_color
+    
+    color_result
+
+// ====================================
+// Get Centerline Color Based on Candle Type
+// ====================================
+get_centerline_color(candle_close, candle_open, candle_high, candle_low) =>
+    body_size = math.abs(candle_close - candle_open)
+    candle_range = candle_high - candle_low
+    is_doji = candle_range > 0 ? (body_size / candle_range) < doji_threshold : true
+    
+    color_result = neutral_centerline_color
+    if is_doji
+        color_result := neutral_centerline_color
+    else if candle_close >= candle_open
+        color_result := bullish_centerline_color
+    else
+        color_result := bearish_centerline_color
+    
+    color_result
+
+// ====================================
+// Importance Filter
+// ====================================
+get_importance_filter(candle_volume, candle_high, candle_low, candle_close, candle_open) =>
+    sufficient_volume = true
+    if enable_volume_filter
+        avg_volume = ta.sma(candle_volume, 20)
+        sufficient_volume := candle_volume >= avg_volume * volume_threshold
+    
+    sufficient_range = true
+    if enable_range_filter
+        avg_range = ta.sma(candle_high - candle_low, 20)
+        sufficient_range := (candle_high - candle_low) >= avg_range * range_threshold
+    
+    meaningful_body = true
+    if enable_body_filter
+        body_size = math.abs(candle_close - candle_open)
+        candle_range = candle_high - candle_low
+        meaningful_body := candle_range > 0 ? (body_size / candle_range) >= body_ratio : false
+    
+    sufficient_volume and sufficient_range and meaningful_body
+
+// ====================================
+// Calculate SL Distance
+// ====================================
+get_sl_distance(zone_center, zone_height) =>
+    sl_dist = 0.0
+    
+    if sl_method == "ATR Multiple"
+        atr_value = ta.atr(atr_period)
+        sl_dist := atr_value * atr_multiplier
+        
+    else if sl_method == "Fixed Points"
+        sl_dist := fixed_points * syminfo.mintick
+        
+    else if sl_method == "Zone Multiple"
+        sl_dist := zone_height * zone_multiplier
+        
+    else if sl_method == "Percentage"
+        sl_dist := zone_center * (percentage / 100)
+    
+    // Apply minimum SL
+    min_sl_distance = min_sl_points * syminfo.mintick
+    sl_dist := math.max(sl_dist, min_sl_distance)
+    
+    sl_dist
+
+// ====================================
+// Volume-in-zone helpers
+// ====================================
+vz_ltf = circle_intrabar_tf != "" ? circle_intrabar_tf : auto_ltf()
+vz_use_ltf = show_vol_circles and vz_ltf != "" and timeframe.in_seconds(vz_ltf) < timeframe.in_seconds()
+
+// Intrabar OHLCV of the CURRENT chart candle
+ib_vol = array.new<float>()
+ib_high = array.new<float>()
+ib_low = array.new<float>()
+ib_open = array.new<float>()
+ib_close = array.new<float>()
+if vz_use_ltf
+    [v_arr, h_arr, l_arr, o_arr, c_arr] = request.security_lower_tf(syminfo.tickerid, vz_ltf, [volume, high, low, open, close])
+    ib_vol := v_arr
+    ib_high := h_arr
+    ib_low := l_arr
+    ib_open := o_arr
+    ib_close := c_arr
+
+// Share of a bar's volume attributed to buyers (0..1); the remainder is sell volume.
+// prev_close is used by the tick rule for flat bars (na = unknown -> 50/50).
+buy_share(b_open, b_high, b_low, b_close, prev_close) =>
+    share = 0.5
+    if buy_sell_method == "Close Position"
+        share := b_high > b_low ? (b_close - b_low) / (b_high - b_low) : 0.5
+    else
+        dir = b_close > b_open ? 1 : b_close < b_open ? -1 : na(prev_close) ? 0 : b_close > prev_close ? 1 : b_close < prev_close ? -1 : 0
+        share := dir > 0 ? 1.0 : dir < 0 ? 0.0 : 0.5
+    share
+
+// Estimate how much of the current chart candle's volume traded between zone_bottom and zone_top,
+// split into buy and sell volume.
+// Intrabar mode: each intrabar's volume is split by the share of its range that lies inside the band,
+// then attributed to buy/sell with buy_share(). Fallback: same logic applied to the chart candle.
+volume_in_band(zone_top, zone_bottom) =>
+    buy_in = 0.0
+    sell_in = 0.0
+    if vz_use_ltf and array.size(ib_vol) > 0
+        for i = 0 to array.size(ib_vol) - 1
+            b_high = array.get(ib_high, i)
+            b_low = array.get(ib_low, i)
+            b_open = array.get(ib_open, i)
+            b_close = array.get(ib_close, i)
+            b_vol = array.get(ib_vol, i)
+            if not na(b_high) and not na(b_low) and not na(b_open) and not na(b_close) and not na(b_vol)
+                overlap = math.max(0.0, math.min(b_high, zone_top) - math.max(b_low, zone_bottom))
+                v_in = 0.0
+                if b_high > b_low
+                    v_in := b_vol * overlap / (b_high - b_low)
+                else if b_high >= zone_bottom and b_high <= zone_top
+                    v_in := b_vol
+                prev_c = i > 0 ? array.get(ib_close, i - 1) : close[1]
+                bs = buy_share(b_open, b_high, b_low, b_close, prev_c)
+                buy_in += v_in * bs
+                sell_in += v_in * (1.0 - bs)
+    else
+        candle_range = high - low
+        overlap = math.max(0.0, math.min(high, zone_top) - math.max(low, zone_bottom))
+        v_in = 0.0
+        if candle_range > 0
+            v_in := volume * overlap / candle_range
+        else if close >= zone_bottom and close <= zone_top
+            v_in := volume
+        bs = buy_share(open, high, low, close, close[1])
+        buy_in := v_in * bs
+        sell_in := v_in * (1.0 - bs)
+    [buy_in, sell_in]
+
+// Rolling history of the largest bubble volume per bar (for Auto size reference)
+var array<float> vz_bubble_hist = array.new<float>()
+
+// Bubble size in points, proportional to a volume relative to ref_vol
+bubble_size(v, ref_vol) =>
+    ratio = ref_vol > 0 ? math.min(math.max(v / ref_vol, 0.0), 1.0) : 0.0
+    scaled = circle_scale == "Area" ? math.sqrt(ratio) : ratio
+    int(math.round(circle_min_pt + (circle_max_pt - circle_min_pt) * scaled))
+
+// Bubble = "●" glyph on an invisible label, so size is continuous (typographic points)
+bubble(y, sz, col, tip) =>
+    label.new(bar_index, y, "●", style=label.style_label_center, color=color.new(color.white, 100), textcolor=col, size=sz, tooltip=tip)
+
+// ====================================
+// GET HTF DATA
+// ====================================
+[htf_high, htf_low, htf_open, htf_close, htf_volume, htf_time] = request.security(syminfo.tickerid, use_htf ? htf_timeframe : timeframe.period, [high, low, open, close, volume, time])
+
+// Detect new HTF bar
+htf_changed = ta.change(htf_time) != 0
+
+// Use HTF or current TF data based on setting
+analysis_high = use_htf ? htf_high : high
+analysis_low = use_htf ? htf_low : low
+analysis_open = use_htf ? htf_open : open
+analysis_close = use_htf ? htf_close : close
+analysis_volume = use_htf ? htf_volume : volume
+
+// ====================================
+// MAIN EXECUTION
+// ====================================
+is_realtime_bar = barstate.isrealtime
+is_historical_bar = not barstate.isrealtime
+should_show = (show_historical and is_historical_bar) or (show_realtime and is_realtime_bar)
+
+// HTF Drawing Logic with both options
+should_draw = false
+if use_htf
+    if htf_draw_mode == "HTF Change Only"
+        // Option 1: Only draw when HTF bar changes (cleaner, no realtime updates)
+        should_draw := htf_changed
+    else
+        // Option 2: Draw on HTF change OR update on last realtime bar (shows developing HTF zones)
+        should_draw := htf_changed or (is_realtime_bar and barstate.islast)
+else
+    // Current timeframe mode
+    should_draw := should_show
+
+is_important = get_importance_filter(analysis_volume, analysis_high, analysis_low, analysis_close, analysis_open)
+
+// Variables to track alert data
+var int zones_created_count = 0
+var array<float> alert_zone_prices = array.new<float>()
+var array<float> alert_zone_scores = array.new<float>()
+
+// Storage for zones being tracked over the next N candles
+var array<float> trk_zone_top = array.new<float>()
+var array<float> trk_zone_bottom = array.new<float>()
+var array<int> trk_zone_bar = array.new<int>()
+var array<float> trk_zone_vol = array.new<float>()   // volume of the candle that created the zone
+
+// Determine if this is a confirmed bar close (for alerts)
+is_bar_close = false
+if use_htf
+    // For HTF mode: only trigger alert when HTF candle completes
+    is_bar_close := htf_changed and not barstate.isrealtime
+else
+    // For current timeframe: trigger on bar close
+    is_bar_close := barstate.isconfirmed or not barstate.isrealtime
+
+if should_draw and is_important
+    [time_at_price, volume_at_price, price_levels_array, total_time, total_volume] = get_htf_intrabar_data(analysis_high, analysis_low, analysis_open, analysis_close, analysis_volume, use_htf)
+    
+    if total_time > 0 and total_volume > 0
+        price_step = (analysis_high - analysis_low) / price_levels
+        zone_height = price_step * 1.5
+        
+        active_scores = get_active_scores(time_at_price, volume_at_price, total_time, total_volume, calculation_mode, time_weight)
+        
+        total_score = 0.0
+        for i = 0 to array.size(active_scores) - 1
+            total_score += array.get(active_scores, i)
+        
+        // Get zone color based on HTF candle type
+        zone_color = get_candle_type_color(analysis_close, analysis_open, analysis_high, analysis_low)
+        
+        // Get centerline color based on HTF candle type
+        current_centerline_color = get_centerline_color(analysis_close, analysis_open, analysis_high, analysis_low)
+        
+        // Get High Volume Zones (highest scores = consolidation)
+        high_vol_zones = get_highest_zones(active_scores, price_levels_array, zones_to_show)
+        
+        if array.size(high_vol_zones) >= 2
+            zones_count = array.size(high_vol_zones) / 2
+            
+            // Reset alert tracking for new candle
+            if is_bar_close
+                zones_created_count := 0
+                array.clear(alert_zone_prices)
+                array.clear(alert_zone_scores)
+            
+            for zone_idx = 0 to zones_count - 1
+                zone_price = array.get(high_vol_zones, zone_idx * 2)
+                zone_score = array.get(high_vol_zones, zone_idx * 2 + 1)
+                score_percentage = total_score > 0 ? (zone_score / total_score) * 100 : 0
+                
+                if score_percentage >= min_threshold
+                    level_top = zone_price + (zone_height / 2)
+                    level_bottom = zone_price - (zone_height / 2)
+                    
+                    // Track zones for alerts
+                    if is_bar_close
+                        zones_created_count += 1
+                        array.push(alert_zone_prices, zone_price)
+                        array.push(alert_zone_scores, score_percentage)
+                    
+                    // Register this zone for post-zone candle tracking and volume circles
+                    if enable_tracking or show_vol_circles
+                        array.push(trk_zone_top, level_top)
+                        array.push(trk_zone_bottom, level_bottom)
+                        array.push(trk_zone_bar, bar_index)
+                        array.push(trk_zone_vol, analysis_volume)
+
+                    
+                    // Draw zone box
+                    box.new(bar_index, level_top, bar_index + extend_bars, level_bottom, 
+                           border_color=zone_color, bgcolor=zone_color, border_width=1/2, extend=extend.none)
+                    
+                    // Draw centerline
+                    if show_centerline
+                        line.new(bar_index, zone_price, bar_index + extend_bars, zone_price, 
+                               color=current_centerline_color, width=centerline_width, style=line.style_solid)
+                    
+                    // Calculate and draw SL lines
+                    if show_sl_lines
+                        sl_distance = get_sl_distance(zone_price, zone_height)
+                        sl_style = sl_line_style == "Solid" ? line.style_solid : 
+                                  sl_line_style == "Dashed" ? line.style_dashed : line.style_dotted
+                        
+                        // Upper SL (for shorts - price going up)
+                        line.new(bar_index, zone_price + sl_distance, bar_index + extend_bars, zone_price + sl_distance, color=sl_line_color, width=sl_line_width, style=sl_style)
+                        
+                        // Lower SL (for longs - price going down)
+                        line.new(bar_index, zone_price - sl_distance, bar_index + extend_bars, zone_price - sl_distance, color=sl_line_color, width=sl_line_width, style=sl_style)
+                    
+                    // Add percentage label
+                    if show_labels
+                        label_x = label_position == "Left" ? bar_index : 
+                                 label_position == "Right" ? bar_index + extend_bars : 
+                                 bar_index + (extend_bars / 2)
+                        
+                        label_size_value = label_size == "Tiny" ? size.tiny : 
+                                          label_size == "Small" ? size.small : 
+                                          label_size == "Normal" ? size.normal : size.large
+                        
+                        percentage_text = str.tostring(score_percentage, "#.#") 
+                        
+                        label.new(label_x, zone_price, percentage_text, 
+                                 style=label.style_none, size=label_size_value, 
+                                 textcolor=label_text_color)
+                    
+                    // === INDIVIDUAL ZONE ALERTS ===
+                    if enable_alerts and alert_on_all_zones and is_bar_close
+                        candle_type = analysis_close >= analysis_open ? "Bullish" : analysis_close < analysis_open ? "Bearish" : "Doji"
+                        
+                        alert_msg = "🎯 High Volume Zone Formed\n" +
+                                   "Symbol: " + syminfo.ticker + "\n" +
+                                   "Timeframe: " + (use_htf ? htf_timeframe : timeframe.period) + "\n" +
+                                   "Candle: " + candle_type + "\n" +
+                                   "Zone Price: " + str.tostring(zone_price, format.mintick) + "\n" +
+                                   "Zone Strength: " + str.tostring(score_percentage, "#.#") + "%\n" +
+                                   "Zone Range: " + str.tostring(level_bottom, format.mintick) + " - " + str.tostring(level_top, format.mintick)
+                        
+                        alert(alert_msg, alert.freq_once_per_bar_close)
+
+// ====================================
+// POST-ZONE CANDLE TRACKING
+// ====================================
+// Drop zones whose tracking window has ended (oldest zones are at the front).
+// The window is the longer of the two features that use the tracked zones.
+trk_window = math.max(track_candles, circle_bars)
+keep_cleaning = array.size(trk_zone_bar) > 0
+while keep_cleaning
+    if bar_index - array.get(trk_zone_bar, 0) > trk_window
+        array.shift(trk_zone_top)
+        array.shift(trk_zone_bottom)
+        array.shift(trk_zone_bar)
+        array.shift(trk_zone_vol)
+        keep_cleaning := array.size(trk_zone_bar) > 0
+    else
+        keep_cleaning := false
+
+track_bg = color(na)
+if enable_tracking and array.size(trk_zone_bar) > 0
+    is_green_candle = close > open
+    is_red_candle = close < open
+    for i = 0 to array.size(trk_zone_bar) - 1
+        bars_since_zone = bar_index - array.get(trk_zone_bar, i)
+        // Only the next N candles after the zone's candle (not the zone candle itself)
+        if bars_since_zone >= 1 and bars_since_zone <= track_candles
+            // Green candle with entire candle (incl. lower wick) above the zone top
+            if is_green_candle and low > array.get(trk_zone_top, i)
+                track_bg := track_bull_color
+            // Red candle with entire candle (incl. upper wick) below the zone bottom
+            else if is_red_candle and high < array.get(trk_zone_bottom, i)
+                track_bg := track_bear_color
+
+bgcolor(track_bg, title="Post-Zone Candle Tracking")
+
+// ====================================
+// VOLUME TRADED INSIDE ZONE -> BUY / SELL BUBBLES
+// ====================================
+// For every tracked zone, if the current chart candle overlaps the zone's price band,
+// estimate the buy and sell volume that traded inside the band and draw two concentric bubbles
+// at the zone centre on this bar: buy volume and sell volume, each sized by its own volume.
+// The larger bubble is drawn first so the smaller one stays visible on top.
+// Pass 1: collect buy/sell volume inside every zone this candle interacts with
+vz_idx = array.new<int>()
+vz_buy = array.new<float>()
+vz_sell = array.new<float>()
+bar_max_bubble = 0.0
+if show_vol_circles and array.size(trk_zone_bar) > 0
+    for i = 0 to array.size(trk_zone_bar) - 1
+        bars_since_zone = bar_index - array.get(trk_zone_bar, i)
+        if bars_since_zone >= 1 and bars_since_zone <= circle_bars
+            z_top = array.get(trk_zone_top, i)
+            z_bottom = array.get(trk_zone_bottom, i)
+            if high >= z_bottom and low <= z_top
+                [buy_vol, sell_vol] = volume_in_band(z_top, z_bottom)
+                total_in = buy_vol + sell_vol
+                zone_vol = array.get(trk_zone_vol, i)
+                total_share = zone_vol > 0 ? (total_in / zone_vol) * 100 : 0.0
+                if total_in > 0 and total_share >= circle_min_share
+                    array.push(vz_idx, i)
+                    array.push(vz_buy, buy_vol)
+                    array.push(vz_sell, sell_vol)
+                    bar_max_bubble := math.max(bar_max_bubble, buy_vol, sell_vol)
+
+// Size reference: largest bubble volume in the lookback (including this bar), or a fixed volume
+array.push(vz_bubble_hist, bar_max_bubble)
+if array.size(vz_bubble_hist) > circle_lookback
+    array.shift(vz_bubble_hist)
+vz_ref_vol = circle_ref_mode == "Fixed volume" ? circle_ref_vol : (array.size(vz_bubble_hist) > 0 ? array.max(vz_bubble_hist) : 0.0)
+
+// Pass 2: draw the bubbles
+if array.size(vz_idx) > 0
+    for k = 0 to array.size(vz_idx) - 1
+        i = array.get(vz_idx, k)
+        buy_vol = array.get(vz_buy, k)
+        sell_vol = array.get(vz_sell, k)
+        z_top = array.get(trk_zone_top, i)
+        z_bottom = array.get(trk_zone_bottom, i)
+        z_center = (z_top + z_bottom) / 2
+        total_in = buy_vol + sell_vol
+        zone_vol = array.get(trk_zone_vol, i)
+        total_share = zone_vol > 0 ? (total_in / zone_vol) * 100 : 0.0
+        delta = buy_vol - sell_vol
+        delta_pct = total_in > 0 ? delta / total_in * 100 : 0.0
+        tip = "Buy volume inside zone: " + str.tostring(buy_vol, format.volume) +
+              "\nSell volume inside zone: " + str.tostring(sell_vol, format.volume) +
+              "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(delta_pct, "#.#") + "%)" +
+              "\nTotal share of zone candle volume: " + str.tostring(total_share, "#.#") + "%" +
+              "\nZone: " + str.tostring(z_bottom, format.mintick) + " - " + str.tostring(z_top, format.mintick) +
+              "\nSize reference volume: " + str.tostring(vz_ref_vol, format.volume) +
+              "\nSplit from: " + (vz_use_ltf and array.size(ib_vol) > 0 ? vz_ltf + " intrabars" : "candle range (rough estimate)")
+        buy_bigger = buy_vol >= sell_vol
+        bubble(z_center, bubble_size(buy_bigger ? buy_vol : sell_vol, vz_ref_vol), buy_bigger ? buy_circle_color : sell_circle_color, tip)
+        bubble(z_center, bubble_size(buy_bigger ? sell_vol : buy_vol, vz_ref_vol), buy_bigger ? sell_circle_color : buy_circle_color, tip)
+
+// Guard: this indicator is meaningless without volume data
+if barstate.islast and na(volume)
+    runtime.error("This symbol has no volume data.")
+
+// === CONSOLIDATED ALERT (One per candle with zones) ===
+if enable_alerts and not alert_on_all_zones and is_bar_close and zones_created_count > 0
+    candle_type = analysis_close >= analysis_open ? "Bullish" : analysis_close < analysis_open ? "Bearish" : "Doji"
+    
+    alert_msg = "🎯 " + str.tostring(zones_created_count) + " High Volume Zone" + (zones_created_count > 1 ? "s" : "") + " Formed\n" +
+               "Symbol: " + syminfo.ticker + "\n" +
+               "Timeframe: " + (use_htf ? htf_timeframe : timeframe.period) + "\n" +
+               "Candle: " + candle_type + "\n" +
+               "Close: " + str.tostring(analysis_close, format.mintick) + "\n"
+    
+    if include_zone_prices and array.size(alert_zone_prices) > 0
+        alert_msg += "\nZone Details:\n"
+        for i = 0 to array.size(alert_zone_prices) - 1
+            zone_p = array.get(alert_zone_prices, i)
+            zone_s = array.get(alert_zone_scores, i)
+            alert_msg += "  Zone " + str.tostring(i + 1) + ": " + str.tostring(zone_p, format.mintick) + " (" + str.tostring(zone_s, "#.#") + "%)\n"
+    
+    alert(alert_msg, alert.freq_once_per_bar_close)
