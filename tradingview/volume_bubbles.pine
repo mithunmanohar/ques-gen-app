@@ -1,0 +1,36 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+indicator("Volume Bubbles", shorttitle = "VolBubbles", overlay = true, max_labels_count = 500)
+
+// ─── Inputs ──────────────────────────────────────────────────────────────────
+centerMode = input.string("Candle (High/Low)", "Circle center", options = ["Candle (High/Low)", "Body (Open/Close)"])
+lookback   = input.int(100, "Normalization lookback (bars)", minval = 1,
+             tooltip = "Circle size is relative to the largest volume seen in this many bars.")
+scaleMode  = input.string("Area", "Scale", options = ["Area", "Diameter"],
+             tooltip = "Area: circle area is proportional to volume (sqrt scaling, reads most accurately).\nDiameter: circle width is proportional to volume.")
+minSize    = input.int(4, "Min circle size (pt)", minval = 1)
+maxSize    = input.int(40, "Max circle size (pt)", minval = 2)
+upColor    = input.color(color.new(color.teal, 40), "Up candle color")
+downColor  = input.color(color.new(color.red, 40), "Down candle color")
+
+// ─── Sizing ──────────────────────────────────────────────────────────────────
+vol    = nz(volume)
+maxVol = ta.highest(vol, lookback)
+ratio  = maxVol > 0 ? vol / maxVol : 0.0
+scaled = scaleMode == "Area" ? math.sqrt(ratio) : ratio
+sizePt = int(math.round(minSize + (maxSize - minSize) * scaled))
+
+// ─── Drawing ─────────────────────────────────────────────────────────────────
+yCenter = centerMode == "Candle (High/Low)" ? hl2 : (open + close) / 2
+col     = close >= open ? upColor : downColor
+
+if vol > 0
+    label.new(bar_index, yCenter, "●",
+         style     = label.style_label_center,
+         color     = color.new(color.white, 100),   // invisible label background
+         textcolor = col,
+         size      = sizePt,                         // v6: size in typographic points
+         tooltip   = "Volume: " + str.tostring(vol, format.volume))
+
+if barstate.islast and na(volume)
+    runtime.error("This symbol has no volume data.")
