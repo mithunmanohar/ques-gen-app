@@ -3,34 +3,101 @@
 indicator("Volume Bubbles", shorttitle = "VolBubbles", overlay = true, max_labels_count = 500)
 
 // ─── Inputs ──────────────────────────────────────────────────────────────────
-centerMode = input.string("Candle (High/Low)", "Circle center", options = ["Candle (High/Low)", "Body (Open/Close)"])
-lookback   = input.int(100, "Normalization lookback (bars)", minval = 1,
-             tooltip = "Circle size is relative to the largest volume seen in this many bars.")
-scaleMode  = input.string("Area", "Scale", options = ["Area", "Diameter"],
+grpCircle = "Circles"
+displayMode = input.string("Delta circle", "Display", options = ["Delta circle", "Buy/Sell circles"], group = grpCircle,
+             tooltip = "Delta circle: one circle per candle, colored by buy/sell delta.\nBuy/Sell circles: two concentric circles, each sized by its own volume.")
+sizeBy     = input.string("Total volume", "Size delta circle by", options = ["Total volume", "Absolute delta"], group = grpCircle)
+centerMode = input.string("Candle (High/Low)", "Circle center", options = ["Candle (High/Low)", "Body (Open/Close)"], group = grpCircle)
+lookback   = input.int(100, "Normalization lookback (bars)", minval = 1, group = grpCircle,
+             tooltip = "Circle size is relative to the largest value seen in this many bars.")
+scaleMode  = input.string("Area", "Scale", options = ["Area", "Diameter"], group = grpCircle,
              tooltip = "Area: circle area is proportional to volume (sqrt scaling, reads most accurately).\nDiameter: circle width is proportional to volume.")
-minSize    = input.int(4, "Min circle size (pt)", minval = 1)
-maxSize    = input.int(40, "Max circle size (pt)", minval = 2)
-upColor    = input.color(color.new(color.teal, 40), "Up candle color")
-downColor  = input.color(color.new(color.red, 40), "Down candle color")
+minSize    = input.int(4, "Min circle size (pt)", minval = 1, group = grpCircle)
+maxSize    = input.int(40, "Max circle size (pt)", minval = 2, group = grpCircle)
 
-// ─── Sizing ──────────────────────────────────────────────────────────────────
-vol    = nz(volume)
-maxVol = ta.highest(vol, lookback)
-ratio  = maxVol > 0 ? vol / maxVol : 0.0
-scaled = scaleMode == "Area" ? math.sqrt(ratio) : ratio
-sizePt = int(math.round(minSize + (maxSize - minSize) * scaled))
+grpDelta = "Buy/sell split"
+ltfInput   = input.timeframe("", "Intrabar timeframe", group = grpDelta,
+             tooltip = "Lower timeframe used to split each candle's volume into buying and selling. Leave on 'Chart' for automatic. If no intrabar data is available the split is estimated from where the close sits in the candle's range.")
+fullAt     = input.float(50, "Full color at delta %", minval = 1, maxval = 100, group = grpDelta,
+             tooltip = "Delta % (buy - sell) / total at which the circle reaches the full buy/sell color.")
+buyColor     = input.color(color.new(color.teal, 30), "Buy color", group = grpDelta)
+sellColor    = input.color(color.new(color.red, 30), "Sell color", group = grpDelta)
+neutralColor = input.color(color.new(color.gray, 30), "Neutral color", group = grpDelta)
+
+// ─── Buy/sell split ──────────────────────────────────────────────────────────
+// Auto intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate.
+autoLtf() =>
+    s = timeframe.in_seconds()
+    s <= 60 ? "" : s <= 14400 ? "1" : s <= 86400 ? "5" : s <= 604800 ? "60" : "240"
+
+// Classify each intrabar: up bar = buying, down bar = selling, flat bar uses the tick rule.
+intrabarBuySell() =>
+    v   = nz(volume)
+    dir = close > open ? 1.0 : close < open ? -1.0 : math.sign(close - nz(close[1], close))
+    [dir > 0 ? v : dir < 0 ? 0.0 : v / 2, dir < 0 ? v : dir > 0 ? 0.0 : v / 2]
+
+ltf    = ltfInput != "" ? ltfInput : autoLtf()
+useLtf = ltf != "" and timeframe.in_seconds(ltf) < timeframe.in_seconds()
+
+float buyFrac = na
+if useLtf
+    [buys, sells] = request.security_lower_tf(syminfo.tickerid, ltf, intrabarBuySell())
+    total = buys.sum() + sells.sum()
+    if total > 0
+        buyFrac := buys.sum() / total
+fromLtf = not na(buyFrac)
+if na(buyFrac)
+    rng = high - low
+    buyFrac := rng > 0 ? (close - low) / rng : 0.5
+
+vol      = nz(volume)
+buyVol   = vol * buyFrac
+sellVol  = vol - buyVol
+delta    = buyVol - sellVol
+deltaPct = vol > 0 ? delta / vol * 100 : 0.0
+
+// ─── Sizing & color ──────────────────────────────────────────────────────────
+maxVol   = ta.highest(vol, lookback)
+maxDelta = ta.highest(math.abs(delta), lookback)
+
+sizeFor(v, ref) =>
+    ratio  = ref > 0 ? math.min(v / ref, 1.0) : 0.0
+    scaled = scaleMode == "Area" ? math.sqrt(ratio) : ratio
+    int(math.round(minSize + (maxSize - minSize) * scaled))
+
+deltaColor = deltaPct >= 0 ?
+     color.from_gradient(deltaPct, 0, fullAt, neutralColor, buyColor) :
+     color.from_gradient(deltaPct, -fullAt, 0, sellColor, neutralColor)
 
 // ─── Drawing ─────────────────────────────────────────────────────────────────
 yCenter = centerMode == "Candle (High/Low)" ? hl2 : (open + close) / 2
-col     = close >= open ? upColor : downColor
 
-if vol > 0
+bubble(sz, col, tip) =>
     label.new(bar_index, yCenter, "●",
          style     = label.style_label_center,
          color     = color.new(color.white, 100),   // invisible label background
          textcolor = col,
-         size      = sizePt,                         // v6: size in typographic points
-         tooltip   = "Volume: " + str.tostring(vol, format.volume))
+         size      = sz,                             // v6: size in typographic points
+         tooltip   = tip)
+
+if vol > 0
+    tip = "Volume: " + str.tostring(vol, format.volume) +
+         "\nBuy: " + str.tostring(buyVol, format.volume) + "  Sell: " + str.tostring(sellVol, format.volume) +
+         "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(deltaPct, "#.#") + "%)" +
+         "\nSplit from: " + (fromLtf ? ltf + " intrabars" : "candle range (rough estimate)")
+    if displayMode == "Delta circle"
+        bubble(sizeBy == "Total volume" ? sizeFor(vol, maxVol) : sizeFor(math.abs(delta), maxDelta), deltaColor, tip)
+    else
+        // Draw the larger circle first so the smaller one stays visible on top.
+        buyBigger = buyVol >= sellVol
+        bubble(sizeFor(buyBigger ? buyVol : sellVol, maxVol), buyBigger ? buyColor : sellColor, tip)
+        bubble(sizeFor(buyBigger ? sellVol : buyVol, maxVol), buyBigger ? sellColor : buyColor, tip)
+
+// Values in the Data Window
+plot(buyVol,   "Buy volume",   display = display.data_window)
+plot(sellVol,  "Sell volume",  display = display.data_window)
+plot(delta,    "Volume delta", display = display.data_window)
+plot(deltaPct, "Delta %",      display = display.data_window)
 
 if barstate.islast and na(volume)
     runtime.error("This symbol has no volume data.")
