@@ -1,6 +1,6 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 //@version=6
-indicator("Volume Bubbles Delta", shorttitle = "VolBubbles Delta", overlay = true, max_labels_count = 500)
+indicator("Volume Bubbles Delta", shorttitle = "VolBubbles Delta", overlay = true, max_labels_count = 500, max_lines_count = 500)
 
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 grpCircle = "Circles"
@@ -30,6 +30,20 @@ textPos   = input.string("Auto (buy above, sell below)", "Position", options = [
 textMin   = input.float(0, "Only show if |delta %| ≥", minval = 0, maxval = 100, group = grpText,
              tooltip = "Hide the text on candles whose delta % is smaller than this. Raising it reduces clutter and saves labels.")
 textSize  = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal"], group = grpText)
+
+grpAbs = "Absorption"
+showAbs     = input.bool(true, "Mark absorption", group = grpAbs,
+             tooltip = "Flags candles where heavy one-sided pressure failed to move price: high volume, high volume per point of range, a strong delta, and a close on the opposite side of the candle.\nNeeds intrabar data. With the candle-range estimate the delta always agrees with the close, so nothing is flagged.")
+absLen      = input.int(20, "Average length (bars)", minval = 2, group = grpAbs,
+             tooltip = "Volume and volume per point are compared with their average over this many previous bars.")
+absVolMult  = input.float(1.5, "Volume ≥ average ×", minval = 0, step = 0.1, group = grpAbs)
+absVppMult  = input.float(1.5, "Volume per point ≥ average ×", minval = 0, step = 0.1, group = grpAbs,
+             tooltip = "Volume ÷ candle range. A spike means a lot traded in a small price area: effort without result.")
+absDeltaMin = input.float(20, "Min |delta %|", minval = 0, maxval = 100, group = grpAbs)
+absClose    = input.float(50, "Close against delta (% of range)", minval = 0, maxval = 100, group = grpAbs,
+             tooltip = "Selling absorbed: the close must be at least this far up the candle's range from the low.\nBuying absorbed: at least this far down from the high.\n50 = close in the opposite half of the candle.")
+absExtend   = input.int(20, "Extend level line (bars)", minval = 0, group = grpAbs,
+             tooltip = "Dashed line at the absorbed level: the low where selling was absorbed, the high where buying was absorbed. 0 = no line.")
 
 // ─── Buy/sell split ──────────────────────────────────────────────────────────
 // Auto intrabar timeframe; charts of 1 minute or less fall back to the candle-range estimate.
@@ -72,6 +86,18 @@ sellVol  = vol - buyVol
 delta    = buyVol - sellVol
 deltaPct = vol > 0 ? delta / vol * 100 : 0.0
 
+// ─── Absorption ──────────────────────────────────────────────────────────────
+// Effort vs result: heavy volume packed into a small range, pushed hard one way,
+// yet the candle closed on the other side. Averages use prior bars only.
+barRange = math.max(high - low, syminfo.mintick)
+volPerPt = vol / barRange
+avgVol   = ta.sma(vol, absLen)[1]
+avgVpp   = ta.sma(volPerPt, absLen)[1]
+closePos = high > low ? (close - low) / (high - low) * 100 : 50.0
+heavy    = showAbs and vol > 0 and vol >= avgVol * absVolMult and volPerPt >= avgVpp * absVppMult
+sellAbsorbed = heavy and delta < 0 and -deltaPct >= absDeltaMin and closePos >= absClose
+buyAbsorbed  = heavy and delta > 0 and deltaPct >= absDeltaMin and closePos <= 100 - absClose
+
 // ─── Sizing & color ──────────────────────────────────────────────────────────
 maxVol   = ta.highest(vol, lookback)
 maxDelta = ta.highest(math.abs(delta), lookback)
@@ -108,7 +134,9 @@ if vol > 0
     tip = "Volume: " + str.tostring(vol, format.volume) +
          "\nBuy: " + str.tostring(buyVol, format.volume) + "  Sell: " + str.tostring(sellVol, format.volume) +
          "\nDelta: " + str.tostring(delta, format.volume) + " (" + str.tostring(deltaPct, "#.#") + "%)" +
-         "\nSplit from: " + (fromLtf ? tfLabel(ltf) + " intrabars" : "candle range (rough estimate)")
+         "\nSplit from: " + (fromLtf ? tfLabel(ltf) + " intrabars" : "candle range (rough estimate)") +
+         (sellAbsorbed ? "\nAbsorption: selling absorbed, buyers held the low" :
+          buyAbsorbed  ? "\nAbsorption: buying absorbed, sellers held the high" : "")
     if displayMode == "Volume + delta"
         // Outer circle = total volume; inner circle = |delta| as an exact fraction of it,
         // so the inner/outer ratio shows how one-sided the candle was.
@@ -141,11 +169,24 @@ if vol > 0
              size      = textSize == "Tiny" ? size.tiny : textSize == "Normal" ? size.normal : size.small,
              tooltip   = tip)
 
+// Absorption level: a diamond at the absorbed extreme plus a dashed line extended to the right.
+// Selling absorbed is bullish (buy color, at the low); buying absorbed is bearish (sell color, at the high).
+if (sellAbsorbed or buyAbsorbed) and absExtend > 0
+    lvl = sellAbsorbed ? low : high
+    line.new(bar_index, lvl, bar_index + absExtend, lvl,
+         color = color.new(sellAbsorbed ? buyColor : sellColor, 0),
+         style = line.style_dashed)
+plotshape(sellAbsorbed ? low : na,  "Selling absorbed", shape.diamond, location.absolute, color.new(buyColor, 0),  size = size.tiny)
+plotshape(buyAbsorbed  ? high : na, "Buying absorbed",  shape.diamond, location.absolute, color.new(sellColor, 0), size = size.tiny)
+alertcondition(sellAbsorbed, "Selling absorbed", "Selling absorbed at {{low}} on {{ticker}} {{interval}}")
+alertcondition(buyAbsorbed,  "Buying absorbed",  "Buying absorbed at {{high}} on {{ticker}} {{interval}}")
+
 // Values in the Data Window
 plot(buyVol,   "Buy volume",   display = display.data_window)
 plot(sellVol,  "Sell volume",  display = display.data_window)
 plot(delta,    "Volume delta", display = display.data_window)
 plot(deltaPct, "Delta %",      display = display.data_window)
+plot(volPerPt, "Volume per point", display = display.data_window)
 
 if barstate.islast and na(volume)
     runtime.error("This symbol has no volume data.")
