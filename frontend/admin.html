@@ -12,6 +12,7 @@
       <span class="text-white font-bold">📚 Question Set Studio</span>
       <a href="/index.html">Home</a>
       <a href="/admin.html" class="active">Admin</a>
+      <a href="/bank.html">Question bank</a>
       <a href="/generate.html">Generate</a>
       <a href="/evaluate.html">Submit &amp; Evaluate</a>
     </div>
@@ -19,11 +20,41 @@
 
   <main class="max-w-5xl mx-auto px-4 py-10 space-y-12">
     <section>
-      <h1 class="text-xl font-bold mb-1">Past-year question papers</h1>
+      <h1 class="text-xl font-bold mb-1">Cambridge past papers → question bank</h1>
       <p class="text-sm text-gray-600 mb-4">
-        Upload PDF, Markdown, or plain-text past papers. Text is extracted automatically and used as
-        reference material when generating new question sets. (Scanned/image-only PDFs won't extract
-        well — see README.)
+        Upload a Cambridge (CAIE) question paper PDF and, ideally, its mark scheme. Every question is
+        cropped out automatically as an image (diagrams included), its marks are read, the mark
+        scheme's answers are attached, and topics are tagged. Automatic checks flag anything that
+        looks off — flagged questions are kept but left out of new sets unless you ask for them.
+        Download the PDFs yourself (e.g. from your school or Cambridge's site); the app never
+        fetches them.
+      </p>
+
+      <form id="paper-form" class="card p-5 grid sm:grid-cols-2 gap-4 mb-6">
+        <div class="field">
+          <label>Question paper (.pdf)</label>
+          <input type="file" name="question_paper" accept=".pdf" required />
+        </div>
+        <div class="field">
+          <label>Mark scheme (.pdf, optional but recommended)</label>
+          <input type="file" name="mark_scheme" accept=".pdf" />
+        </div>
+        <div class="field"><label>Subject</label><input type="text" name="subject" placeholder="Mathematics" /></div>
+        <div class="field"><label>Title (optional — read from the paper if blank)</label><input type="text" name="title" /></div>
+        <div class="sm:col-span-2">
+          <button type="submit" id="paper-upload-btn" class="btn btn-primary">Upload &amp; extract</button>
+        </div>
+      </form>
+
+      <div id="paper-list" class="space-y-3"></div>
+    </section>
+
+    <section>
+      <h1 class="text-xl font-bold mb-1">Reference documents for AI generation</h1>
+      <p class="text-sm text-gray-600 mb-4">
+        Upload PDF, Markdown, or plain-text past papers or notes. Text is extracted automatically and used as
+        reference material when DeepSeek writes brand-new questions from a pattern. (Scanned/image-only PDFs
+        won't extract well — see README.)
       </p>
 
       <form id="doc-form" class="card p-5 grid sm:grid-cols-2 gap-4 mb-6">

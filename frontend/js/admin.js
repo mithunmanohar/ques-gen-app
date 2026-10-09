@@ -329,6 +329,85 @@ patternForm.addEventListener("submit", async (ev) => {
   }
 });
 
+// ---------- Cambridge past papers (question bank) ----------
+
+function paperCard(p) {
+  const counts =
+    p.status === "ready"
+      ? `${p.question_count} questions · ${p.total_marks} marks${p.max_mark != null ? ` (mark scheme max ${p.max_mark})` : ""}` +
+        (p.flagged_count ? ` · <span class="text-amber-700">${p.flagged_count} flagged</span>` : "")
+      : "";
+  const issues = p.issues.length
+    ? `<ul class="text-xs mt-2 p-2 rounded border ${p.status === "failed" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}">
+        ${p.issues.map((i) => `<li>⚠️ ${escapeHtml(i)}</li>`).join("")}
+      </ul>`
+    : "";
+  return `
+    <div class="card p-4 flex justify-between items-start gap-4">
+      <div>
+        <div class="font-semibold">${escapeHtml(p.title)} <span class="badge badge-${p.status}">${p.status}</span>
+          ${p.status === "ready" && !p.needs_attention ? '<span class="badge badge-ready">all checks passed</span>' : ""}
+        </div>
+        <div class="text-xs text-gray-500">${escapeHtml(p.subject)}${p.subject && p.paper_code ? " · " : ""}${escapeHtml(p.paper_code)}
+          · ${escapeHtml(p.qp_filename)}${p.ms_filename ? " + " + escapeHtml(p.ms_filename) : " (no mark scheme)"}</div>
+        <div class="text-sm mt-1">${counts}</div>
+        ${issues}
+      </div>
+      <div class="flex gap-2 flex-wrap justify-end">
+        ${p.status === "ready" ? `<a class="btn btn-secondary" href="/bank.html?paper=${p.id}">View questions</a>` : ""}
+        <button class="btn btn-danger" onclick="deletePaper(${p.id})">Delete</button>
+      </div>
+    </div>`;
+}
+
+async function loadPapers() {
+  const list = document.getElementById("paper-list");
+  list.innerHTML = "Loading…";
+  try {
+    const papers = await Api.get("/api/past-papers");
+    list.innerHTML = papers.length
+      ? papers.map(paperCard).join("")
+      : '<p class="text-sm text-gray-500">No past papers uploaded yet.</p>';
+  } catch (e) {
+    list.innerHTML = `<p class="text-sm text-red-600">Failed to load: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function deletePaper(id) {
+  if (!confirm("Delete this paper and all its extracted questions?")) return;
+  try {
+    await Api.del(`/api/past-papers/${id}`);
+    toast("Past paper deleted");
+    loadPapers();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+document.getElementById("paper-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const btn = document.getElementById("paper-upload-btn");
+  btn.disabled = true;
+  btn.textContent = "Extracting questions… (can take a few seconds)";
+  try {
+    const paper = await Api.postForm("/api/past-papers", new FormData(form));
+    if (paper.status === "failed") {
+      toast(`Import failed: ${paper.issues[0] || "unknown error"}`, "error");
+    } else {
+      toast(`${paper.question_count} questions extracted${paper.needs_attention ? " — see the warnings on the paper" : ""}`);
+      form.reset();
+    }
+    loadPapers();
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Upload & extract";
+  }
+});
+
 fillPatternForm(null);
+loadPapers();
 loadDocs();
 loadPatterns();

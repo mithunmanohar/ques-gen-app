@@ -62,13 +62,17 @@ class Settings(BaseSettings):
         return self.uploads_dir / "submissions"
 
     @property
+    def past_papers_dir(self) -> Path:
+        return self.uploads_dir / "past_papers"
+
+    @property
     def resolved_database_url(self) -> str:
         if self.database_url:
             return self.database_url
         return f"sqlite:///{self.data_dir / 'app.db'}"
 
     def ensure_dirs(self) -> None:
-        for d in (self.data_dir, self.uploads_dir, self.source_documents_dir, self.submissions_dir):
+        for d in (self.data_dir, self.uploads_dir, self.source_documents_dir, self.submissions_dir, self.past_papers_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

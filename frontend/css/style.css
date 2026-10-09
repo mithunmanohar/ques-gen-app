@@ -108,9 +108,49 @@ body {
 .toast-success { background: #16a34a; }
 .toast-error { background: #dc2626; }
 
+.badge-processing { background: #fef3c7; color: #92400e; }
+.badge-source { background: #e0e7ff; color: #3730a3; }
+
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #eef2ff;
+  color: #3730a3;
+  margin: 0.1rem 0;
+}
+
+/* Past-paper question/mark-scheme crops: every crop of a paper has the same
+   width, so scaling them all to the column width keeps a consistent text size. */
+.question-img {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+}
+.question-block .flex > .question-img { flex: 1; }
+.working-space {
+  margin-top: 0.5rem;
+  border-bottom: 1px dashed #e5e7eb;
+}
+.extracted-text {
+  white-space: pre-wrap;
+  font-size: 0.75rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+  max-height: 14rem;
+  overflow: auto;
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
+  .question-block .flex { break-inside: avoid; }
+  .working-space { border-bottom: none; }
 }
 
 /* ==========================================================================
@@ -131,6 +171,7 @@ body {
 .flex-wrap { flex-wrap: wrap; }
 .text-center { text-align: center; }
 .text-left { text-align: left; }
+.text-right { text-align: right; }
 .whitespace-nowrap { white-space: nowrap; }
 .overflow-auto { overflow: auto; }
 .align-top { vertical-align: top; }

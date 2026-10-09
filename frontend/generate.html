@@ -12,6 +12,7 @@
       <span class="text-white font-bold">📚 Question Set Studio</span>
       <a href="/index.html">Home</a>
       <a href="/admin.html">Admin</a>
+      <a href="/bank.html">Question bank</a>
       <a href="/generate.html" class="active">Generate</a>
       <a href="/evaluate.html">Submit &amp; Evaluate</a>
     </div>
@@ -19,7 +20,47 @@
 
   <main class="max-w-5xl mx-auto px-4 py-10 space-y-12">
     <section>
-      <h1 class="text-xl font-bold mb-1">Generate question sets</h1>
+      <h1 class="text-xl font-bold mb-1">Build sets from the past-paper bank</h1>
+      <p class="text-sm text-gray-600 mb-4">
+        Picks real past-paper questions (as images, diagrams and all) at random until the marks
+        target is reached. Answer keys come straight from the official mark schemes.
+      </p>
+
+      <form id="bank-form" class="card p-5 space-y-4">
+        <div class="grid sm:grid-cols-3 gap-4">
+          <div class="field">
+            <label>Target total marks</label>
+            <input type="number" name="target_marks" value="40" min="1" max="500" required />
+          </div>
+          <div class="field">
+            <label>Number of sets</label>
+            <input type="number" name="num_sets" value="1" min="1" max="10" />
+          </div>
+          <div class="field">
+            <label>Name (optional)</label>
+            <input type="text" name="name" />
+          </div>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div class="field">
+            <label>Papers to draw from (none ticked = all)</label>
+            <div id="bank-paper-checks" class="text-sm text-gray-600 border rounded-lg p-3 max-h-40 overflow-auto"></div>
+          </div>
+          <div class="field">
+            <label>Topics (none ticked = any)</label>
+            <div id="bank-topic-checks" class="text-sm text-gray-600 border rounded-lg p-3 max-h-40 overflow-auto"></div>
+          </div>
+        </div>
+        <div class="text-sm space-y-2">
+          <label class="flex items-center gap-2"><input type="checkbox" name="avoid_used" checked /> Avoid questions already used in earlier sets</label>
+          <label class="flex items-center gap-2"><input type="checkbox" name="include_flagged" /> Include questions flagged by the automatic checks</label>
+        </div>
+        <button type="submit" id="bank-btn" class="btn btn-primary">Build from bank</button>
+      </form>
+    </section>
+
+    <section>
+      <h1 class="text-xl font-bold mb-1">Generate new questions with AI</h1>
       <p class="text-sm text-gray-600 mb-4">
         Pick a pattern (blueprint) and, optionally, reference past-year papers to guide topics and
         difficulty. DeepSeek generates brand-new questions that follow the blueprint exactly, along

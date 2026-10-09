@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..db import get_db
+from ..services.bank_sets import BankSelectionError, build_bank_sets
 from ..services.generation import generate_question_set
 
 router = APIRouter(prefix="/api/question-sets", tags=["question-sets"])
@@ -42,6 +43,23 @@ def generate(payload: schemas.GenerateRequest, db: Session = Depends(get_db)):
         )
         results.append(question_set)
     return results
+
+
+@router.post("/from-bank", response_model=list[schemas.QuestionSetOut])
+def generate_from_bank(payload: schemas.BankSetRequest, db: Session = Depends(get_db)):
+    try:
+        return build_bank_sets(
+            db,
+            name=payload.name.strip(),
+            num_sets=payload.num_sets,
+            target_marks=payload.target_marks,
+            past_paper_ids=payload.past_paper_ids,
+            topics=payload.topics,
+            include_flagged=payload.include_flagged,
+            avoid_used=payload.avoid_used,
+        )
+    except BankSelectionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/{question_set_id}", response_model=schemas.QuestionSetOut)

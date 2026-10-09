@@ -16,6 +16,16 @@ Data flow this schema supports:
         |
         v
   Evaluation -> EvaluationItem (per-question grading result)
+
+Past-paper bank (a second way to build a QuestionSet):
+
+  PastPaper (an uploaded Cambridge question paper + optional mark scheme)
+        |
+        v  (automatic extraction: one cropped image per question)
+  BankQuestion (image, text, marks, topics, official mark-scheme entries)
+        |
+        v  (picked at random to hit a marks target)
+  QuestionSet -> Question (with bank_question_id set)
 """
 from datetime import datetime
 
@@ -63,12 +73,89 @@ class Pattern(Base):
     question_sets: Mapped[list["QuestionSet"]] = relationship(back_populates="pattern")
 
 
+class PastPaper(Base):
+    __tablename__ = "past_papers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(100), default="")
+    syllabus_code: Mapped[str] = mapped_column(String(20), default="")
+    component: Mapped[str] = mapped_column(String(20), default="")
+    session: Mapped[str] = mapped_column(String(30), default="")
+    year: Mapped[str] = mapped_column(String(10), default="")
+    qp_filename: Mapped[str] = mapped_column(String(255))
+    ms_filename: Mapped[str] = mapped_column(String(255), default="")
+    storage_dir: Mapped[str] = mapped_column(String(500), default="")
+    max_mark: Mapped[int | None] = mapped_column(Integer, nullable=True)  # from the mark scheme
+    status: Mapped[str] = mapped_column(String(20), default="processing")  # processing | ready | failed
+    issues: Mapped[list] = mapped_column(JSON, default=list)  # paper-level automatic-check warnings
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    questions: Mapped[list["BankQuestion"]] = relationship(
+        back_populates="past_paper", order_by="BankQuestion.number", cascade="all, delete-orphan"
+    )
+
+    @property
+    def paper_code(self) -> str:
+        if not self.syllabus_code:
+            return ""
+        return f"{self.syllabus_code}/{self.component} {self.session} {self.year}".strip()
+
+    @property
+    def total_marks(self) -> int:
+        return int(sum(q.marks for q in self.questions))
+
+    @property
+    def question_count(self) -> int:
+        return len(self.questions)
+
+    @property
+    def flagged_count(self) -> int:
+        return sum(1 for q in self.questions if q.flags)
+
+    @property
+    def needs_attention(self) -> bool:
+        return bool(self.issues) or self.flagged_count > 0
+
+
+class BankQuestion(Base):
+    __tablename__ = "bank_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    past_paper_id: Mapped[int] = mapped_column(ForeignKey("past_papers.id"))
+    number: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text, default="")  # text layer — maths layout is lossy; the image is canonical
+    marks: Mapped[float] = mapped_column(Float, default=0)
+    subparts: Mapped[list] = mapped_column(JSON, default=list)
+    topics: Mapped[list] = mapped_column(JSON, default=list)
+    flags: Mapped[list] = mapped_column(JSON, default=list)  # question-level automatic-check warnings
+    image_path: Mapped[str] = mapped_column(String(500), default="")
+    ms_entries: Mapped[list] = mapped_column(JSON, default=list)  # [{label, answer, marks, partial_marks}]
+    ms_image_path: Mapped[str] = mapped_column(String(500), default="")
+
+    past_paper: Mapped["PastPaper"] = relationship(back_populates="questions")
+
+    @property
+    def image_url(self) -> str:
+        return f"/api/bank-questions/{self.id}/image"
+
+    @property
+    def ms_image_url(self) -> str | None:
+        return f"/api/bank-questions/{self.id}/mark-scheme-image" if self.ms_image_path else None
+
+    @property
+    def source_label(self) -> str:
+        code = self.past_paper.paper_code if self.past_paper else ""
+        return f"{code} Q{self.number}".strip()
+
+
 class QuestionSet(Base):
     __tablename__ = "question_sets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
-    pattern_id: Mapped[int] = mapped_column(ForeignKey("patterns.id"))
+    pattern_id: Mapped[int | None] = mapped_column(ForeignKey("patterns.id"), nullable=True)  # None for bank sets
+    source: Mapped[str] = mapped_column(String(20), default="ai")  # ai | bank
     subject: Mapped[str] = mapped_column(String(100), default="")
     grade: Mapped[str] = mapped_column(String(50), default="")
     status: Mapped[str] = mapped_column(String(20), default="ready")  # generating | ready | failed
@@ -98,7 +185,23 @@ class Question(Base):
     expected_answer: Mapped[str] = mapped_column(Text, default="")
     rubric: Mapped[str] = mapped_column(Text, default="")
 
+    # Set when the question was picked from the past-paper bank rather than AI-generated.
+    bank_question_id: Mapped[int | None] = mapped_column(ForeignKey("bank_questions.id"), nullable=True)
+
     question_set: Mapped["QuestionSet"] = relationship(back_populates="questions")
+    bank_question: Mapped["BankQuestion | None"] = relationship()
+
+    @property
+    def image_url(self) -> str | None:
+        return self.bank_question.image_url if self.bank_question else None
+
+    @property
+    def answer_key_image_url(self) -> str | None:
+        return self.bank_question.ms_image_url if self.bank_question else None
+
+    @property
+    def source_label(self) -> str:
+        return self.bank_question.source_label if self.bank_question else ""
 
 
 class Submission(Base):

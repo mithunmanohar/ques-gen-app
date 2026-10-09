@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SourceDocumentOut(BaseModel):
@@ -44,6 +44,16 @@ class GenerateRequest(BaseModel):
     extra_instructions: str = ""
 
 
+class BankSetRequest(BaseModel):
+    name: str = ""
+    num_sets: int = Field(1, ge=1, le=10)
+    target_marks: float = Field(40, gt=0, le=500)
+    past_paper_ids: list[int] = []  # empty = every ready paper
+    topics: list[str] = []  # empty = any topic
+    avoid_used: bool = True  # skip questions already used in any earlier set
+    include_flagged: bool = False  # include questions the automatic checks flagged
+
+
 class QuestionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,11 +65,14 @@ class QuestionOut(BaseModel):
     options: list | None = None
     marks: float
     difficulty: str
+    image_url: str | None = None  # past-paper questions: the cropped question image is canonical
 
 
 class QuestionWithAnswerOut(QuestionOut):
     expected_answer: str
     rubric: str
+    answer_key_image_url: str | None = None
+    source_label: str = ""
 
 
 class QuestionSetOut(BaseModel):
@@ -67,7 +80,8 @@ class QuestionSetOut(BaseModel):
 
     id: int
     name: str
-    pattern_id: int
+    pattern_id: int | None = None
+    source: str = "ai"
     subject: str
     grade: str
     status: str
@@ -78,6 +92,51 @@ class QuestionSetOut(BaseModel):
 
 class QuestionSetAnswerKeyOut(QuestionSetOut):
     questions: list[QuestionWithAnswerOut] = []  # type: ignore[assignment]
+
+
+class BankQuestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    past_paper_id: int
+    number: int
+    marks: float
+    subparts: list[str] = []
+    topics: list[str] = []
+    flags: list[str] = []
+    text: str
+    image_url: str
+    ms_entries: list[dict] = []
+    ms_image_url: str | None = None
+    source_label: str = ""
+
+
+class PastPaperOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    subject: str
+    paper_code: str
+    qp_filename: str
+    ms_filename: str
+    max_mark: int | None = None
+    total_marks: int
+    question_count: int
+    flagged_count: int
+    needs_attention: bool
+    status: str
+    issues: list[str] = []
+    uploaded_at: datetime
+
+
+class PastPaperDetailOut(PastPaperOut):
+    questions: list[BankQuestionOut] = []
+
+
+class TopicCount(BaseModel):
+    topic: str
+    count: int
 
 
 class SubmissionImageOut(BaseModel):

@@ -46,7 +46,16 @@ Respond with a single JSON object and nothing else, matching exactly this shape:
     }
   ]
 }
-Include exactly one item per question in the question paper, in any order."""
+Include exactly one item per question in the question paper, in any order.
+
+Some questions come from official Cambridge past papers (question_type "PAST_PAPER"). For \
+those, expected_answer and rubric are the official mark scheme: follow its mark codes \
+(M = method mark, A = accuracy mark, dependent on the M mark, B = independent mark, \
+FT = follow-through from the student's earlier answer, oe = or equivalent, cao = correct \
+answer only, nfww = not from wrong working). Their text was extracted from a PDF, so maths \
+in it may be garbled; an image of the official mark-scheme rows may also be attached as a \
+reference image — trust that image over the extracted text. Reference images are never \
+student work."""
 
 
 def _question_payload(question: models.Question) -> dict:
@@ -62,13 +71,31 @@ def _question_payload(question: models.Question) -> dict:
     }
 
 
-def _build_user_prompt(questions: list[models.Question]) -> str:
+def _reference_images(questions: list[models.Question]) -> list[tuple[int, Path]]:
+    """(order_index, path) of the official mark-scheme image for each past-paper question that has one."""
+    refs = []
+    for q in questions:
+        if q.bank_question and q.bank_question.ms_image_path and Path(q.bank_question.ms_image_path).is_file():
+            refs.append((q.order_index, Path(q.bank_question.ms_image_path)))
+    return refs
+
+
+def _build_user_prompt(questions: list[models.Question], references: list[tuple[int, Path]] | None = None) -> str:
     payload = [_question_payload(q) for q in questions]
+    references = references or []
+    if references:
+        listing = ", ".join(f"image {i + 1} = mark scheme for order_index {idx}" for i, (idx, _) in enumerate(references))
+        images_note = (
+            f"\n\nThe first {len(references)} attached image(s) are official mark-scheme references ({listing}). "
+            "The remaining attached image(s) are the student's photographed answer sheet. "
+        )
+    else:
+        images_note = "\n\nThe attached image(s) are the student's photographed answer sheet. "
     return (
         "Question paper with hidden answer key (JSON):\n"
         + json.dumps(payload, indent=2)
-        + "\n\nThe attached image(s) are the student's photographed answer sheet. "
-        "Grade it now and respond with the required JSON."
+        + images_note
+        + "Grade it now and respond with the required JSON."
     )
 
 
@@ -110,9 +137,13 @@ def evaluate_submission(db: Session, submission: models.Submission) -> models.Ev
 
         settings_mock = get_settings().effective_mock_mode
 
-        user_prompt = _build_user_prompt(questions)
+        references = _reference_images(questions)
+        user_prompt = _build_user_prompt(questions, references)
         response = deepseek_client.vision_json(
-            SYSTEM_PROMPT, user_prompt, image_paths, mock_response=_mock_response(questions)
+            SYSTEM_PROMPT,
+            user_prompt,
+            [path for _, path in references] + image_paths,
+            mock_response=_mock_response(questions),
         )
 
         by_order_index = {q.order_index: q for q in questions}

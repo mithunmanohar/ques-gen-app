@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import REPO_ROOT, get_settings
 from .db import init_db
-from .routers import patterns, question_sets, source_documents, submissions
+from .routers import past_papers, patterns, question_sets, source_documents, submissions
 
 logging.basicConfig(level=logging.INFO)
 
@@ -35,6 +35,7 @@ app.include_router(source_documents.router)
 app.include_router(patterns.router)
 app.include_router(question_sets.router)
 app.include_router(submissions.router)
+app.include_router(past_papers.router)
 
 
 @app.get("/api/health")
