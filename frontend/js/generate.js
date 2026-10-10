@@ -83,11 +83,12 @@ async function loadQuestionSets() {
       .map(
         (s) => `
       <div class="card p-4 flex justify-between items-start gap-4">
-        <div>
+        <div class="grow">
           <div class="font-semibold">${escapeHtml(s.name)} ${statusBadge(s.status)}
             <span class="badge badge-source">${s.source === "bank" ? "past-paper bank" : "AI-generated"}</span></div>
           <div class="text-xs text-gray-500">${escapeHtml(s.subject)} ${s.grade ? "· Grade " + escapeHtml(s.grade) : ""} · ${s.questions.length} questions · ${s.questions.reduce((sum, q) => sum + q.marks, 0)} marks · ${new Date(s.generated_at).toLocaleString()}</div>
           ${s.error_message ? `<div class="text-xs ${s.status === "failed" ? "text-red-600" : "text-amber-700"} mt-1">${escapeHtml(s.error_message)}</div>` : ""}
+          ${renderLogLines(s.processing_log, s.source === "bank" ? "Selection log" : "Generation log", s.status === "failed")}
         </div>
         <div class="flex gap-2 flex-wrap justify-end">
           <a class="btn btn-secondary" href="/set.html?id=${s.id}" target="_blank">View / Print</a>
@@ -110,7 +111,7 @@ async function deleteSet(id) {
     toast("Question set deleted");
     loadQuestionSets();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 }
 
@@ -132,14 +133,24 @@ document.getElementById("generate-form").addEventListener("submit", async (ev) =
   }
   btn.disabled = true;
   btn.textContent = "Generating… (this calls DeepSeek and can take a little while)";
+  const requestId = Api.newRequestId();
+  const stopLog = startLiveLog(document.getElementById("generate-live-log"), requestId, "Generating with AI");
+  let ok = false;
   try {
-    const results = await Api.postJson("/api/question-sets/generate", payload);
+    const results = await Api.postJson("/api/question-sets/generate", payload, { requestId });
     const failed = results.filter((r) => r.status === "failed");
-    toast(failed.length ? `${results.length - failed.length} set(s) generated, ${failed.length} failed` : `${results.length} set(s) generated`, failed.length ? "error" : "success");
+    ok = !failed.length;
+    toast(
+      failed.length
+        ? `${results.length - failed.length} set(s) generated, ${failed.length} failed: ${failed[0].error_message}`
+        : `${results.length} set(s) generated`,
+      failed.length ? "error" : "success"
+    );
     loadQuestionSets();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e, "Generation failed.");
   } finally {
+    await stopLog(ok);
     btn.disabled = false;
     btn.textContent = "Generate";
   }
@@ -159,8 +170,12 @@ document.getElementById("bank-form").addEventListener("submit", async (ev) => {
     include_flagged: form.include_flagged.checked,
   };
   btn.disabled = true;
+  const requestId = Api.newRequestId();
+  const stopLog = startLiveLog(document.getElementById("bank-live-log"), requestId, "Building from the bank");
+  let ok = false;
   try {
-    const results = await Api.postJson("/api/question-sets/from-bank", payload);
+    const results = await Api.postJson("/api/question-sets/from-bank", payload, { requestId });
+    ok = true;
     const short = results.filter((r) => r.error_message);
     toast(
       short.length ? `${results.length} set(s) built — ${short[0].error_message}` : `${results.length} set(s) built`,
@@ -168,8 +183,9 @@ document.getElementById("bank-form").addEventListener("submit", async (ev) => {
     );
     loadQuestionSets();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e, "Could not build sets.");
   } finally {
+    await stopLog(ok);
     btn.disabled = false;
   }
 });

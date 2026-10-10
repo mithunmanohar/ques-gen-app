@@ -14,6 +14,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..logging_setup import capture_operation_log
 from . import deepseek_client
 
 logger = logging.getLogger(__name__)
@@ -131,9 +132,35 @@ def generate_question_set(
     db.commit()
     db.refresh(question_set)
 
+    with capture_operation_log() as log_lines:
+        _generate_into(db, question_set, pattern, source_documents, extra_instructions)
+    question_set.processing_log = log_lines
+    db.commit()
+    db.refresh(question_set)
+    return question_set
+
+
+def _generate_into(
+    db: Session,
+    question_set: models.QuestionSet,
+    pattern: models.Pattern,
+    source_documents: list[models.SourceDocument],
+    extra_instructions: str,
+) -> None:
+    logger.info("Generating question set #%d '%s' from pattern '%s'", question_set.id, question_set.name, pattern.name)
     try:
         source_texts = [doc.extracted_text for doc in source_documents if doc.extracted_text]
         expected_counts = _expected_section_counts(pattern.config_json)
+        logger.info(
+            "Blueprint: %s; reference documents: %d (%d chars, prompt uses at most %d)",
+            ", ".join(f"section {k}: {v} question(s)" for k, v in expected_counts.items()),
+            len(source_documents),
+            sum(len(t) for t in source_texts),
+            MAX_SOURCE_CHARS,
+        )
+        for doc in source_documents:
+            if not doc.extracted_text:
+                logger.warning("Reference document '%s' has no extracted text and is ignored", doc.title)
 
         raw_questions: list[dict] = []
         mismatch_description = ""
@@ -146,6 +173,7 @@ def generate_question_set(
                 else ""
             )
             user_prompt = _build_user_prompt(pattern.config_json, source_texts, extra_instructions, retry_note)
+            logger.info("Attempt %d/%d: asking DeepSeek for the questions", attempt, MAX_GENERATION_ATTEMPTS)
             response = deepseek_client.chat_json(
                 SYSTEM_PROMPT, user_prompt, mock_response=_mock_response(pattern.config_json)
             )
@@ -154,6 +182,7 @@ def generate_question_set(
                 mismatch_description = "no questions were returned"
                 continue
             actual_counts = _actual_section_counts(raw_questions)
+            logger.info("Attempt %d returned %d question(s): %s", attempt, len(raw_questions), actual_counts)
             if actual_counts == expected_counts:
                 mismatch_description = ""
                 break
@@ -187,11 +216,8 @@ def generate_question_set(
                 )
             )
         question_set.status = "ready"
+        logger.info("Question set #%d ready with %d question(s)", question_set.id, len(raw_questions))
     except Exception as e:  # noqa: BLE001 — record the failure on the record, don't crash the request
-        logger.exception("Question set generation failed")
+        logger.exception("Question set generation failed: %s: %s", type(e).__name__, e)
         question_set.status = "failed"
-        question_set.error_message = str(e)
-
-    db.commit()
-    db.refresh(question_set)
-    return question_set
+        question_set.error_message = f"{type(e).__name__}: {e}"

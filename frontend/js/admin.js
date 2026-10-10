@@ -88,7 +88,7 @@ async function deleteDoc(id) {
     toast("Document deleted");
     loadDocs();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 }
 
@@ -102,7 +102,7 @@ document.getElementById("doc-form").addEventListener("submit", async (ev) => {
     form.reset();
     loadDocs();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 });
 
@@ -302,7 +302,7 @@ async function deletePattern(id) {
     toast("Pattern deleted");
     loadPatterns();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 }
 
@@ -325,7 +325,7 @@ patternForm.addEventListener("submit", async (ev) => {
     fillPatternForm(null);
     loadPatterns();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 });
 
@@ -344,7 +344,7 @@ function paperCard(p) {
     : "";
   return `
     <div class="card p-4 flex justify-between items-start gap-4">
-      <div>
+      <div class="grow">
         <div class="font-semibold">${escapeHtml(p.title)} <span class="badge badge-${p.status}">${p.status}</span>
           ${p.status === "ready" && !p.needs_attention ? '<span class="badge badge-ready normal-case">All checks passed</span>' : ""}
         </div>
@@ -352,6 +352,7 @@ function paperCard(p) {
           · ${escapeHtml(p.qp_filename)}${p.ms_filename ? " + " + escapeHtml(p.ms_filename) : " (no mark scheme)"}</div>
         <div class="text-sm mt-1">${counts}</div>
         ${issues}
+        ${renderLogLines(p.processing_log, "Import log", p.status === "failed")}
       </div>
       <div class="flex gap-2 flex-wrap justify-end">
         ${p.status === "ready" ? `<a class="btn btn-secondary" href="/bank.html?paper=${p.id}">View questions</a>` : ""}
@@ -380,7 +381,7 @@ async function deletePaper(id) {
     toast("Past paper deleted");
     loadPapers();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e);
   }
 }
 
@@ -388,20 +389,25 @@ document.getElementById("paper-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const form = ev.target;
   const btn = document.getElementById("paper-upload-btn");
+  const requestId = Api.newRequestId();
   btn.disabled = true;
-  btn.textContent = "Extracting questions… (can take a few seconds)";
+  btn.textContent = "Extracting questions…";
+  const stopLog = startLiveLog(document.getElementById("paper-live-log"), requestId, "Importing paper");
+  let ok = false;
   try {
-    const paper = await Api.postForm("/api/past-papers", new FormData(form));
-    if (paper.status === "failed") {
-      toast(`Import failed: ${paper.issues[0] || "unknown error"}`, "error");
+    const paper = await Api.postForm("/api/past-papers", new FormData(form), { requestId });
+    ok = paper.status !== "failed";
+    if (!ok) {
+      toast(`Import failed: ${paper.issues[0] || "unknown error"} — see the import log below.`, "error");
     } else {
       toast(`${paper.question_count} questions extracted${paper.needs_attention ? " — see the warnings on the paper" : ""}`);
       form.reset();
     }
     loadPapers();
   } catch (e) {
-    toast(e.message, "error");
+    showError(e, "Upload failed.");
   } finally {
+    await stopLog(ok);
     btn.disabled = false;
     btn.textContent = "Upload & extract";
   }

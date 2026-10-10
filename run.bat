@@ -1,24 +1,33 @@
 @echo off
-REM One-command local start on Windows: creates/uses a virtualenv, installs
-REM dependencies, and starts the app. Open http://localhost:8000 once it
-REM says "Uvicorn running". Press Ctrl+C to stop.
-
+REM Start Question Set Studio on Windows: double-click this file.
+REM   run.bat --debug       very detailed logs
+REM   run.bat --help        all options
+REM All the real work happens in start.py; this script just finds a suitable Python.
+setlocal
 cd /d "%~dp0"
+chcp 65001 >nul 2>&1
+title Question Set Studio
 
-if not exist ".venv" (
-  echo Creating virtual environment .venv ...
-  python -m venv .venv
+set "PY="
+py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1 && set "PY=py -3"
+if not defined PY python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1 && set "PY=python"
+if not defined PY (
+  echo ----------------------------------------------------------------
+  echo   PROBLEM: Python 3.10 or newer was not found on this computer.
+  echo.
+  echo   1. Download it from https://www.python.org/downloads/
+  echo   2. In the installer, TICK "Add python.exe to PATH".
+  echo   3. Then double-click run.bat again.
+  echo ----------------------------------------------------------------
+  pause
+  exit /b 1
 )
 
-call .venv\Scripts\activate.bat
-echo Installing/checking dependencies...
-pip install -q -r requirements.txt
-
-if not exist ".env" (
-  echo No .env found - copying .env.example. The app will run in mock mode until you add a DEEPSEEK_API_KEY.
-  copy .env.example .env
+%PY% start.py %*
+if errorlevel 1 (
+  echo.
+  echo The app did not start - see the messages above.
+  pause
+  exit /b 1
 )
-
-echo Starting Question Set Studio at http://localhost:8000 ...
-cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+endlocal

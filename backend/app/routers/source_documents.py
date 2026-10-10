@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from ..db import get_db
 from ..services import ingestion
 
 router = APIRouter(prefix="/api/source-documents", tags=["source-documents"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[schemas.SourceDocumentOut])
@@ -42,10 +44,16 @@ async def upload_source_document(
     dest_filename = f"{uuid.uuid4().hex}_{file.filename}"
     dest_path = await ingestion.save_upload(file, settings.source_documents_dir, dest_filename)
 
+    logger.info("Saved reference document %s (%s, %.0f KB)", file.filename, file_type, dest_path.stat().st_size / 1024)
     try:
         extracted_text = ingestion.extract_text(dest_path, file_type)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Could not read file: {e}") from e
+        logger.exception("Could not read %s: %s: %s", file.filename, type(e).__name__, e)
+        raise HTTPException(status_code=400, detail=f"Could not read file ({type(e).__name__}): {e}") from e
+    if extracted_text.strip():
+        logger.info("Extracted %d characters of text from %s", len(extracted_text), file.filename)
+    else:
+        logger.warning("No text could be extracted from %s — probably a scanned/image-only PDF", file.filename)
 
     doc = models.SourceDocument(
         title=title or file.filename,

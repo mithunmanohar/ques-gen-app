@@ -198,6 +198,17 @@ would have, clearly labelled `[MOCK]`. This means:
 | `GET/POST /submissions` | list / create (multipart images) a submission |
 | `POST /submissions/{id}/evaluate` | run grading, returns the graded submission |
 | `GET /submissions/{id}` | fetch one submission + its evaluation |
+| `GET /logs` | newest server log entries; filter with `level`, `request_id`, `q`, `limit` |
+| `GET /logs/download` | the raw log file (`data/logs/app.log`) |
+| `GET /diagnostics` | versions, mode, DeepSeek settings (never the key), paths, record counts |
+
+Every response carries an `X-Request-ID` header. A client may supply its own
+ID (4–40 characters from letters, digits, `-` and `_`); the UI does this so it
+can follow its own request in the live log panel. Error bodies always include
+`detail` and `request_id`. Unhandled exceptions return 500 with `error_type`
+and the last 25 lines of the `traceback`. Past papers, question sets and
+submissions each store the log of the operation that produced them in
+`processing_log`.
 
 ## 10. Non-goals (by design, for this local/single-family use case)
 

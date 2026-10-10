@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
-# One-command local start: creates/uses a virtualenv, installs dependencies,
-# and starts the app. Open http://localhost:8000 once it says "Uvicorn
-# running". Press Ctrl+C to stop.
-set -euo pipefail
-cd "$(dirname "$0")"
+# Start Question Set Studio on macOS / Linux.
+#   ./run.sh               set up (first run) and start; opens your browser
+#   ./run.sh --debug       same, with very detailed logs
+#   ./run.sh --help        all options
+# All the real work happens in start.py; this script just finds a suitable Python.
+cd "$(dirname "$0")" || exit 1
 
-if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment (.venv)…"
-  python3 -m venv .venv
+find_python() {
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+       "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! PYTHON="$(find_python)"; then
+  echo "----------------------------------------------------------------"
+  echo "  PROBLEM: Python 3.10 or newer was not found on this computer."
+  echo ""
+  case "$(uname -s)" in
+    Darwin) echo "  Install it from https://www.python.org/downloads/ (or: brew install python)," ;;
+    *)      echo "  Install it with your package manager, e.g.:  sudo apt install python3 python3-venv" ;;
+  esac
+  echo "  then run this script again."
+  echo "----------------------------------------------------------------"
+  exit 1
 fi
 
-source .venv/bin/activate
-echo "Installing/checking dependencies…"
-pip install -q -r requirements.txt
-
-if [ ! -f ".env" ]; then
-  echo "No .env found — copying .env.example. The app will run in mock mode until you add a DEEPSEEK_API_KEY."
-  cp .env.example .env
-fi
-
-echo "Starting Question Set Studio at http://localhost:8000 ..."
-cd backend
-exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+exec "$PYTHON" start.py "$@"

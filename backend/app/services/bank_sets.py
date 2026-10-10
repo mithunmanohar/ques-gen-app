@@ -9,11 +9,15 @@ targets usually land exactly. Sets made in one request never share a question.
 Picked questions are printed in their original question-number order, which
 on Cambridge papers runs roughly easy to hard.
 """
+import logging
 import random
 
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..logging_setup import capture_operation_log
+
+logger = logging.getLogger(__name__)
 
 SHUFFLE_ATTEMPTS = 60
 
@@ -41,11 +45,23 @@ def candidate_questions(
         used = db.query(models.Question.bank_question_id).filter(models.Question.bank_question_id.isnot(None))
         query = query.filter(models.BankQuestion.id.notin_(used))
     pool = query.all()
+    logger.info(
+        "Bank questions from %s%s: %d",
+        f"paper(s) {past_paper_ids}" if past_paper_ids else "all ready papers",
+        ", excluding ones already used in a set" if avoid_used else "",
+        len(pool),
+    )
     wanted = {t.strip().lower() for t in topics if t.strip()}
     if wanted:
         pool = [q for q in pool if wanted & {t.lower() for t in q.topics}]
+        logger.info("After topic filter %s: %d", sorted(wanted), len(pool))
     if not include_flagged:
+        flagged = sum(1 for q in pool if q.flags)
         pool = [q for q in pool if not q.flags]
+        logger.info("After leaving out %d flagged question(s): %d", flagged, len(pool))
+    zero = sum(1 for q in pool if q.marks <= 0)
+    if zero:
+        logger.info("Leaving out %d question(s) with no marks", zero)
     return [q for q in pool if q.marks > 0]
 
 
@@ -89,41 +105,61 @@ def build_bank_sets(
     avoid_used: bool,
     seed: int | None = None,
 ) -> list[models.QuestionSet]:
-    pool = candidate_questions(
-        db, past_paper_ids=past_paper_ids, topics=topics, include_flagged=include_flagged, avoid_used=avoid_used
-    )
-    if not pool:
-        raise BankSelectionError(
-            "No bank questions match these filters. Upload more papers, widen the topic/paper choice, "
-            "or allow flagged / previously used questions."
+    with capture_operation_log() as shared_lines:
+        pool = candidate_questions(
+            db, past_paper_ids=past_paper_ids, topics=topics, include_flagged=include_flagged, avoid_used=avoid_used
+        )
+        if not pool:
+            logger.warning("No bank questions match the filters; nothing to build")
+            raise BankSelectionError(
+                "No bank questions match these filters. Upload more papers, widen the topic/paper choice, "
+                "or allow flagged / previously used questions."
+            )
+        logger.info(
+            "Building %d set(s) of %g marks from a pool of %d question(s) worth %g marks",
+            num_sets,
+            target_marks,
+            len(pool),
+            sum(q.marks for q in pool),
         )
 
     rng = random.Random(seed)
     results = []
     for i in range(num_sets):
-        picked = pick_to_target(pool, target_marks, rng)
-        picked_ids = {q.id for q in picked}
-        pool = [q for q in pool if q.id not in picked_ids]
-        picked.sort(key=lambda q: (q.number, q.past_paper_id))
-        total = sum(q.marks for q in picked)
-
-        set_name = name or f"Past-paper practice ({total:g} marks)"
-        if num_sets > 1:
-            set_name = f"{set_name} — Set {i + 1}"
-        subjects = list(dict.fromkeys(q.past_paper.subject for q in picked if q.past_paper.subject))
-        question_set = models.QuestionSet(
-            name=set_name,
-            pattern_id=None,
-            source="bank",
-            subject=", ".join(subjects),
-            status="ready" if picked else "failed",
-        )
-        if not picked:
-            question_set.error_message = "Ran out of matching bank questions for this set."
-        elif total < target_marks:
-            question_set.error_message = (
-                f"Reached {total:g} of the {target_marks:g} marks asked for — not enough matching questions."
+        with capture_operation_log() as set_lines:
+            picked = pick_to_target(pool, target_marks, rng)
+            picked_ids = {q.id for q in picked}
+            pool = [q for q in pool if q.id not in picked_ids]
+            picked.sort(key=lambda q: (q.number, q.past_paper_id))
+            total = sum(q.marks for q in picked)
+            logger.info(
+                "Set %d: picked %d question(s) worth %g marks: %s",
+                i + 1,
+                len(picked),
+                total,
+                ", ".join(f"{q.source_label} ({q.marks:g})" for q in picked) or "none",
             )
+
+            set_name = name or f"Past-paper practice ({total:g} marks)"
+            if num_sets > 1:
+                set_name = f"{set_name} — Set {i + 1}"
+            subjects = list(dict.fromkeys(q.past_paper.subject for q in picked if q.past_paper.subject))
+            question_set = models.QuestionSet(
+                name=set_name,
+                pattern_id=None,
+                source="bank",
+                subject=", ".join(subjects),
+                status="ready" if picked else "failed",
+            )
+            if not picked:
+                question_set.error_message = "Ran out of matching bank questions for this set."
+            elif total < target_marks:
+                question_set.error_message = (
+                    f"Reached {total:g} of the {target_marks:g} marks asked for — not enough matching questions."
+                )
+            if question_set.error_message:
+                logger.warning("Set %d: %s", i + 1, question_set.error_message)
+        question_set.processing_log = shared_lines + set_lines
         db.add(question_set)
         for idx, q in enumerate(picked):
             question_set.questions.append(
@@ -142,5 +178,6 @@ def build_bank_sets(
             )
         db.commit()
         db.refresh(question_set)
+        logger.info("Saved question set #%d '%s'", question_set.id, question_set.name)
         results.append(question_set)
     return results

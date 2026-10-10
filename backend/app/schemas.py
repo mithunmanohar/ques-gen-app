@@ -1,6 +1,11 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+
+# Rows created before processing logs existed hold NULL; show them as an empty log.
+LogLines = Annotated[list[str], BeforeValidator(lambda v: v or [])]
 
 
 class SourceDocumentOut(BaseModel):
@@ -86,6 +91,7 @@ class QuestionSetOut(BaseModel):
     grade: str
     status: str
     error_message: str = ""
+    processing_log: LogLines = []
     generated_at: datetime
     questions: list[QuestionOut] = []
 
@@ -127,6 +133,7 @@ class PastPaperOut(BaseModel):
     needs_attention: bool
     status: str
     issues: list[str] = []
+    processing_log: LogLines = []
     uploaded_at: datetime
 
 
@@ -177,6 +184,7 @@ class SubmissionOut(BaseModel):
     student_name: str
     status: str
     error_message: str = ""
+    processing_log: LogLines = []
     submitted_at: datetime
     images: list[SubmissionImageOut] = []
     evaluation: EvaluationOut | None = None

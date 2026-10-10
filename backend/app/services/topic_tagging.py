@@ -55,6 +55,7 @@ def tag_topics(subject: str, paper_code: str, questions: list[tuple[int, str]]) 
     """Returns {question number: [topics]}. Raises deepseek_client.DeepSeekError on API failure."""
     if not questions:
         return {}
+    logger.info("Asking DeepSeek to tag topics for %d question(s)", len(questions))
     response = deepseek_client.chat_json(
         SYSTEM_PROMPT,
         _build_user_prompt(subject, paper_code, questions),
@@ -65,7 +66,12 @@ def tag_topics(subject: str, paper_code: str, questions: list[tuple[int, str]]) 
         try:
             number = int(entry.get("number"))
         except (TypeError, ValueError):
+            logger.warning("Ignoring topic entry without a valid question number: %r", entry)
             continue
         topics = [str(t).strip() for t in entry.get("topics", []) if str(t).strip()]
         out[number] = list(dict.fromkeys(topics))[:3]
+        logger.debug("  Q%d topics: %s", number, out[number])
+    missing = sorted({n for n, _ in questions} - set(out))
+    if missing and out:
+        logger.warning("No topics returned for question(s) %s", ", ".join(map(str, missing)))
     return out

@@ -14,6 +14,7 @@ question bank, fully automatically:
 Flagged questions are still stored; set generation skips them unless asked not to.
 """
 import logging
+import time
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -58,7 +59,16 @@ def _find_duplicate(db: Session, paper: models.PastPaper) -> models.PastPaper | 
 def import_past_paper(db: Session, paper: models.PastPaper, qp_path: Path, ms_path: Path | None) -> models.PastPaper:
     out_dir = Path(paper.storage_dir)
     issues: list[str] = []
+    started = time.perf_counter()
+    logger.info(
+        "Importing past paper #%d: question paper %s (%.0f KB)%s",
+        paper.id,
+        paper.qp_filename,
+        qp_path.stat().st_size / 1024,
+        f", mark scheme {paper.ms_filename} ({ms_path.stat().st_size / 1024:.0f} KB)" if ms_path else ", no mark scheme",
+    )
     try:
+        logger.info("Step 1/4: finding and cropping questions")
         extraction = paper_extraction.extract_questions(qp_path)
         issues += extraction.issues
         info = extraction.info
@@ -67,6 +77,7 @@ def import_past_paper(db: Session, paper: models.PastPaper, qp_path: Path, ms_pa
             paper.session, paper.year = info.session, info.year
             duplicate = _find_duplicate(db, paper)
             if duplicate:
+                logger.error("Duplicate: %s is already in the bank as paper #%d", info.label, duplicate.id)
                 raise paper_extraction.ExtractionError(
                     f"{info.label} is already in the bank as '{duplicate.title}'. Delete that one first to re-import it."
                 )
@@ -75,18 +86,25 @@ def import_past_paper(db: Session, paper: models.PastPaper, qp_path: Path, ms_pa
 
         ms = None
         if ms_path is not None:
+            logger.info("Step 2/4: reading the mark scheme")
             try:
                 ms = ms_parser.parse_mark_scheme(ms_path)
             except Exception as e:  # noqa: BLE001 — a bad mark scheme shouldn't lose the questions
-                logger.exception("Mark scheme parsing failed")
+                logger.exception("Mark scheme parsing crashed (%s); continuing without it", type(e).__name__)
                 issues.append(f"Couldn't read the mark scheme: {e}")
         if ms is not None:
             issues += ms.issues
             paper.max_mark = ms.max_mark
             if pairing_issue := _check_pairing(info, ms):
                 issues.append(pairing_issue)
+                logger.warning("Pairing check: %s", pairing_issue)
+            else:
+                logger.info("Pairing check: mark scheme matches the question paper")
         else:
             issues.append("No mark scheme — answer keys are empty and grading relies on the model's own judgement.")
+            logger.info("Step 2/4: skipped — no mark scheme uploaded")
+
+        logger.info("Step 3/4: rendering question images and running checks")
 
         for q in extraction.questions:
             flags = list(q.flags)
@@ -111,8 +129,16 @@ def import_past_paper(db: Session, paper: models.PastPaper, qp_path: Path, ms_pa
                     ms_total = ms_parser.numeric_marks(rows)
                     if ms_total is not None and ms_total != q.marks:
                         flags.append(f"Question shows {q.marks} marks but the mark scheme awards {ms_total}.")
+                    logger.debug(
+                        "  Q%d mark scheme: %s (marks column total %s)",
+                        q.number,
+                        ", ".join(r.label for r in rows),
+                        ms_total if ms_total is not None else "not numeric",
+                    )
                 else:
                     flags.append("No mark scheme entry found for this question.")
+            for flag in flags[len(q.flags):]:
+                logger.warning("Q%d check: %s", q.number, flag)
 
             paper.questions.append(
                 models.BankQuestion(
@@ -136,29 +162,45 @@ def import_past_paper(db: Session, paper: models.PastPaper, qp_path: Path, ms_pa
                     "The mark scheme has answers for question(s) "
                     f"{', '.join(map(str, orphans))} that weren't found in the question paper."
                 )
+                logger.warning("Orphan check: mark scheme answers for missing question(s) %s", orphans)
             if ms.max_mark is not None and total != ms.max_mark:
                 issues.append(f"Question marks add up to {total}, but the mark scheme's maximum is {ms.max_mark}.")
+                logger.warning("Total check: questions add up to %d, mark scheme maximum is %d", total, ms.max_mark)
+            elif ms.max_mark is not None:
+                logger.info("Total check: questions add up to %d = mark scheme maximum", total)
 
+        logger.info("Step 4/4: tagging topics")
         try:
             tags = topic_tagging.tag_topics(
                 paper.subject, paper.paper_code, [(q.number, q.text) for q in extraction.questions]
             )
             for bq in paper.questions:
                 bq.topics = tags.get(bq.number, [])
+            tagged = sum(1 for bq in paper.questions if bq.topics)
+            logger.info("Topics tagged on %d of %d question(s)", tagged, len(paper.questions))
         except Exception as e:  # noqa: BLE001 — topics are optional
-            logger.exception("Topic tagging failed")
+            logger.exception("Topic tagging failed (%s); questions stay untagged", type(e).__name__)
             issues.append(f"Topic tagging failed, so questions are untagged: {e}")
 
         paper.status = "ready"
+        logger.info(
+            "Import finished in %.1fs: %d question(s), %d marks, %d flagged, %d paper warning(s)",
+            time.perf_counter() - started,
+            len(paper.questions),
+            sum(q.marks for q in paper.questions),
+            sum(1 for q in paper.questions if q.flags),
+            len(issues),
+        )
     except paper_extraction.ExtractionError as e:
+        logger.error("Import failed: %s", e)
         paper.status = "failed"
         paper.questions.clear()
         issues.append(str(e))
     except Exception as e:  # noqa: BLE001 — record the failure on the paper, don't crash the request
-        logger.exception("Past paper import failed")
+        logger.exception("Import crashed with %s: %s", type(e).__name__, e)
         paper.status = "failed"
         paper.questions.clear()
-        issues.append(f"Extraction failed: {e}")
+        issues.append(f"Extraction failed ({type(e).__name__}): {e}. See the processing log for the full traceback.")
 
     paper.issues = issues
     db.commit()
