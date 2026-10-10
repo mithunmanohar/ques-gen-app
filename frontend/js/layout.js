@@ -12,6 +12,8 @@ const NAV_ICONS = {
     '<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="M9 14h6"/>',
   evaluate:
     '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  logs:
+    '<path d="M5 4h10l4 4v12H5z"/><path d="M9 11h6"/><path d="M9 14.5h6"/><path d="M9 18h3"/>',
 };
 
 const NAV_SECTIONS = [
@@ -29,6 +31,10 @@ const NAV_SECTIONS = [
       { href: "/generate.html", label: "Question sets", icon: "generate", also: ["/set.html"] },
       { href: "/evaluate.html", label: "Submit & grade", icon: "evaluate" },
     ],
+  },
+  {
+    label: "System",
+    items: [{ href: "/logs.html", label: "Logs & diagnostics", icon: "logs" }],
   },
 ];
 

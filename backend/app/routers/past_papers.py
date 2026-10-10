@@ -1,18 +1,22 @@
+import logging
 import shutil
 from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..config import get_settings
 from ..db import get_db
+from ..logging_setup import capture_operation_log
 from ..services import ingestion
 from ..services.past_paper_import import import_past_paper
 
 router = APIRouter(prefix="/api", tags=["past-papers"])
+logger = logging.getLogger(__name__)
 
 
 def _require_pdf(upload: UploadFile, what: str) -> None:
@@ -55,11 +59,16 @@ async def upload_past_paper(
     ms_path = await ingestion.save_upload(mark_scheme, storage_dir, "mark_scheme.pdf") if has_ms else None
     db.commit()
 
-    paper = import_past_paper(db, paper, qp_path, ms_path)
+    logger.info("Saved uploads to %s", storage_dir)
+
+    # Extraction is CPU-heavy: run it off the event loop so the UI can keep polling the live log meanwhile.
+    with capture_operation_log() as log_lines:
+        paper = await run_in_threadpool(import_past_paper, db, paper, qp_path, ms_path)
     if not paper.title:
         paper.title = Path(question_paper.filename).stem
-        db.commit()
-        db.refresh(paper)
+    paper.processing_log = log_lines
+    db.commit()
+    db.refresh(paper)
     return paper
 
 
@@ -86,6 +95,7 @@ def delete_past_paper(paper_id: int, db: Session = Depends(get_db)):
     )
     if used_in:
         names = ", ".join(f"'{n}'" for (n,) in used_in[:5])
+        logger.warning("Refusing to delete past paper #%d: used in set(s) %s", paper_id, names)
         raise HTTPException(
             status_code=409,
             detail=f"Questions from this paper are used in question set(s) {names}. Delete those sets first.",
@@ -95,6 +105,7 @@ def delete_past_paper(paper_id: int, db: Session = Depends(get_db)):
     db.commit()
     if storage_dir:
         shutil.rmtree(storage_dir, ignore_errors=True)
+    logger.info("Deleted past paper #%d (%s) and its files in %s", paper_id, paper.title, storage_dir)
 
 
 @router.get("/bank-questions", response_model=list[schemas.BankQuestionOut])

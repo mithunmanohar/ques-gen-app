@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..logging_setup import capture_operation_log
 from . import deepseek_client
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,18 @@ def _mock_response(questions: list[models.Question]) -> dict:
 
 
 def evaluate_submission(db: Session, submission: models.Submission) -> models.Evaluation:
+    with capture_operation_log() as log_lines:
+        try:
+            return _evaluate(db, submission)
+        finally:
+            submission.processing_log = list(log_lines)
+            db.commit()
+
+
+def _evaluate(db: Session, submission: models.Submission) -> models.Evaluation:
+    logger.info("Grading submission #%d for question set #%d", submission.id, submission.question_set_id)
     submission.status = "evaluating"
+    submission.error_message = ""
     db.commit()
 
     questions = (
@@ -130,6 +142,16 @@ def evaluate_submission(db: Session, submission: models.Submission) -> models.Ev
         .all()
     )
     image_paths = [Path(img.file_path) for img in submission.images]
+    logger.info(
+        "%d question(s) worth %g marks; %d answer-sheet photo(s): %s",
+        len(questions),
+        sum(q.marks for q in questions),
+        len(image_paths),
+        ", ".join(f"{p.name} ({p.stat().st_size / 1024:.0f} KB)" if p.is_file() else f"{p.name} (MISSING)" for p in image_paths),
+    )
+    missing = [p.name for p in image_paths if not p.is_file()]
+    if missing:
+        logger.error("Answer-sheet photo file(s) missing on disk: %s", ", ".join(missing))
 
     settings_mock = False
     try:
@@ -138,6 +160,8 @@ def evaluate_submission(db: Session, submission: models.Submission) -> models.Ev
         settings_mock = get_settings().effective_mock_mode
 
         references = _reference_images(questions)
+        if references:
+            logger.info("Attaching %d official mark-scheme image(s) as grading references", len(references))
         user_prompt = _build_user_prompt(questions, references)
         response = deepseek_client.vision_json(
             SYSTEM_PROMPT,
@@ -153,9 +177,12 @@ def evaluate_submission(db: Session, submission: models.Submission) -> models.Ev
 
         total_awarded = 0.0
         total_possible = 0.0
-        for item in response.get("items", []):
+        items = response.get("items", [])
+        logger.info("Grader returned %d item(s) for %d question(s)", len(items), len(questions))
+        for item in items:
             question = by_order_index.get(item.get("question_order_index"))
             if question is None:
+                logger.warning("Ignoring graded item for unknown question_order_index %r", item.get("question_order_index"))
                 continue
             marks_awarded = float(item.get("marks_awarded", 0) or 0)
             marks_possible = float(item.get("marks_possible", question.marks) or question.marks)
@@ -172,16 +199,25 @@ def evaluate_submission(db: Session, submission: models.Submission) -> models.Ev
                     feedback=str(item.get("feedback", "")),
                 )
             )
+            logger.info("  Q%d: %g / %g", question.order_index + 1, marks_awarded, marks_possible)
+        ungraded = set(by_order_index) - {item.get("question_order_index") for item in items}
+        if ungraded:
+            logger.warning(
+                "No grade returned for question(s) %s — they count as 0", ", ".join(str(i + 1) for i in sorted(ungraded))
+            )
 
         evaluation.total_marks_awarded = total_awarded
         evaluation.total_marks_possible = total_possible or sum(q.marks for q in questions)
         evaluation.overall_feedback = str(response.get("overall_feedback", ""))
         submission.status = "evaluated"
+        logger.info(
+            "Graded: %g / %g%s", evaluation.total_marks_awarded, evaluation.total_marks_possible, " (mock)" if settings_mock else ""
+        )
 
     except Exception as e:  # noqa: BLE001
-        logger.exception("Evaluation failed")
+        logger.exception("Grading failed: %s: %s", type(e).__name__, e)
         submission.status = "failed"
-        submission.error_message = str(e)
+        submission.error_message = f"{type(e).__name__}: {e}"
         db.commit()
         raise
 

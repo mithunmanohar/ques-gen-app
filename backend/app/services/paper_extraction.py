@@ -17,11 +17,14 @@ How it works:
     come out at the same scale. The original question number is whited out
     so a new paper can renumber it.
 """
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pymupdf
+
+logger = logging.getLogger(__name__)
 
 HEADER_ZONE = 55  # pt from the top of the page: page number
 FOOTER_ZONE = 50  # pt from the bottom: syllabus code, copyright, "Turn over"
@@ -216,12 +219,26 @@ def find_question_anchors(doc: pymupdf.Document) -> tuple[list[_Anchor], list[st
             clusters[-1].append(a)
         else:
             clusters.append([a])
+    logger.info("Found %d bold left-margin number(s) that could be question numbers", len(candidates))
+    for a in candidates:
+        logger.debug("  candidate %s on page %d at x=%.1f y=%.1f", a.number, a.page + 1, a.bbox.x0, a.y0)
     best: list[_Anchor] = []
     best_cluster: list[_Anchor] = []
     for cluster in clusters:
         chain = _sequential_chain(cluster)
+        logger.debug(
+            "  column at x≈%.1f: %d candidate(s), longest 1,2,3… run = %d", cluster[0].bbox.x0, len(cluster), len(chain)
+        )
         if len(chain) > len(best):
             best, best_cluster = chain, cluster
+    if best:
+        logger.info(
+            "Question-number column at x≈%.1f: questions %d–%d (%d ignored as stray numbers)",
+            best[0].bbox.x0,
+            best[0].number,
+            best[-1].number,
+            len(candidates) - len(best),
+        )
     issues = []
     if best:
         last = best[-1].number
@@ -251,7 +268,10 @@ def _content_columns(doc: pymupdf.Document, anchors: list[_Anchor], items_by_pag
 def extract_questions(pdf_path: Path) -> ExtractionResult:
     doc = pymupdf.open(pdf_path)
     try:
-        if not any(page.get_text().strip() for page in doc):
+        logger.info("Opened %s: %d page(s), PDF %s", pdf_path.name, len(doc), doc.metadata.get("format", "?"))
+        text_pages = sum(1 for page in doc if page.get_text().strip())
+        logger.info("Pages with a text layer: %d of %d", text_pages, len(doc))
+        if not text_pages:
             raise ExtractionError(
                 "This PDF has no text layer (probably a scan), so questions can't be located. "
                 "Only born-digital PDFs are supported."
@@ -264,11 +284,23 @@ def extract_questions(pdf_path: Path) -> ExtractionResult:
             )
         if info is None:
             issues.append("Couldn't read the paper code (e.g. 0444/21/M/J/23) from the footer.")
+            logger.warning("Paper code not found in any page footer")
+        else:
+            logger.info("Paper code: %s", info.label)
 
         last_page = _last_question_page(doc, anchors[-1].page)
         pages = range(anchors[0].page, last_page + 1)
         items_by_page = {p: page_items(doc[p]) for p in pages}
         col_x0, col_x1 = _content_columns(doc, anchors, items_by_page)
+        skipped = [str(p + 1) for p in range(anchors[0].page)]
+        logger.info(
+            "Questions run from page %d to page %d%s; crop column x=%.1f–%.1f",
+            anchors[0].page + 1,
+            last_page + 1,
+            f" (skipping cover/formula page(s) {', '.join(skipped)})" if skipped else "",
+            col_x0,
+            col_x1,
+        )
 
         questions = []
         for i, anchor in enumerate(anchors):
@@ -296,6 +328,9 @@ def extract_questions(pdf_path: Path) -> ExtractionResult:
                     continue
                 mask = anchor.bbox if p == anchor.page else None
                 segments.append(Segment(p, pymupdf.Rect(col_x0, y0, col_x1, y1), mask))
+                logger.debug(
+                    "  Q%d page %d: %d content item(s), crop y=%.1f–%.1f", anchor.number, p + 1, len(band), y0, y1
+                )
                 lines += [it.text for it in sorted(band, key=lambda it: (round(it.y0), it.x0)) if it.text]
 
             lines = [cleaned for line in lines if (cleaned := clean_text(line))]
@@ -315,6 +350,23 @@ def extract_questions(pdf_path: Path) -> ExtractionResult:
             if len({s.page for s in segments}) > MAX_PAGES_BEFORE_FLAG:
                 flags.append(f"Spans {len({s.page for s in segments})} pages — worth a quick look at the crop.")
             questions.append(ExtractedQuestion(anchor.number, segments, text, marks, subparts, flags))
+            pages_used = sorted({sg.page + 1 for sg in segments})
+            logger.info(
+                "Q%d: %d mark(s), page(s) %s%s%s",
+                anchor.number,
+                marks,
+                ", ".join(map(str, pages_used)) or "none",
+                f", parts ({', '.join(subparts)})" if subparts else "",
+                f" — FLAGGED: {'; '.join(flags)}" if flags else "",
+            )
+        logger.info(
+            "Extracted %d question(s), %d marks in total, %d flagged",
+            len(questions),
+            sum(q.marks for q in questions),
+            sum(1 for q in questions if q.flags),
+        )
+        for issue in issues:
+            logger.warning("Paper check: %s", issue)
         return ExtractionResult(info, questions, issues)
     finally:
         doc.close()
@@ -343,7 +395,16 @@ def render_segments(pdf_path: Path, segments: list[Segment], out_path: Path, sca
                 )
             y += s.rect.height + SEGMENT_GAP
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False).save(str(out_path))
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+        pix.save(str(out_path))
+        logger.debug(
+            "  rendered %s: %d segment(s), %dx%d px, %.0f KB",
+            out_path.name,
+            len(segments),
+            pix.width,
+            pix.height,
+            out_path.stat().st_size / 1024,
+        )
     finally:
         out.close()
         src.close()

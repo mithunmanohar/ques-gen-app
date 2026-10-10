@@ -89,6 +89,7 @@ class PastPaper(Base):
     max_mark: Mapped[int | None] = mapped_column(Integer, nullable=True)  # from the mark scheme
     status: Mapped[str] = mapped_column(String(20), default="processing")  # processing | ready | failed
     issues: Mapped[list] = mapped_column(JSON, default=list)  # paper-level automatic-check warnings
+    processing_log: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)  # import log lines
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     questions: Mapped[list["BankQuestion"]] = relationship(
@@ -160,6 +161,7 @@ class QuestionSet(Base):
     grade: Mapped[str] = mapped_column(String(50), default="")
     status: Mapped[str] = mapped_column(String(20), default="ready")  # generating | ready | failed
     error_message: Mapped[str] = mapped_column(Text, default="")
+    processing_log: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)  # generation log lines
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     pattern: Mapped["Pattern"] = relationship(back_populates="question_sets")
@@ -212,6 +214,7 @@ class Submission(Base):
     student_name: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(20), default="submitted")  # submitted|evaluating|evaluated|failed
     error_message: Mapped[str] = mapped_column(Text, default="")
+    processing_log: Mapped[list | None] = mapped_column(JSON, default=list, nullable=True)  # grading log lines
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     images: Mapped[list["SubmissionImage"]] = relationship(

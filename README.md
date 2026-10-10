@@ -19,21 +19,47 @@ when you generate a question set or grade a submission.
 See [`SPEC.md`](SPEC.md) for the full functional/data spec — what each
 part of the app does and why it's built this way.
 
-## Quick start
+## Quick start (no technical knowledge needed)
 
-**Requirements:** Python 3.10+.
+**You need:** Python 3.10 or newer. If you don't have it, install it from
+[python.org/downloads](https://www.python.org/downloads/). On Windows, tick
+**"Add python.exe to PATH"** in the installer.
 
-1. Clone this repo and open a terminal in it.
-2. Run the start script for your OS:
-   - macOS/Linux: `./run.sh`
-   - Windows: `run.bat`
+1. Download this folder (on GitHub: **Code → Download ZIP**, then unzip it).
+2. Start the app:
+   - **Windows:** double-click **`run.bat`**.
+   - **macOS:** double-click **`Start Question Set Studio.command`**. The
+     first time, macOS may refuse to open it. If so, right-click it and
+     choose **Open**.
+   - **Linux** (or a terminal on macOS): run `./run.sh`.
+3. A window opens and works through five numbered steps:
+   1. checks Python
+   2. creates a private environment
+   3. installs packages (only on the first run, which takes 1–3 minutes)
+   4. checks your settings, and on the first run asks for your DeepSeek API
+      key (just press Enter to skip it and try demo mode)
+   5. starts the app
 
-   This creates a virtual environment, installs dependencies, copies
-   `.env.example` to `.env` if you don't have one yet, and starts the app.
-3. Open **http://localhost:8000** in your browser.
+   When it's ready, your browser opens at **http://localhost:8000**.
+4. Keep that window open while you use the app. To stop it, press
+   **Ctrl+C** in the window, or close it.
 
-That's it — one process serves both the backend API and the frontend
-pages. No Node.js, no separate frontend build step, no Docker.
+If something goes wrong, the window says what failed and what to try. It
+also shows the end of the setup log.
+
+Useful options (add them after `run.bat` / `./run.sh`):
+
+| Option | What it does |
+|---|---|
+| `--debug` | Very detailed logs, for tracking down a problem |
+| `--port 9000` | Use another port (by default the next free one is picked if 8000 is busy) |
+| `--no-browser` | Don't open the browser automatically |
+| `--reinstall` | Reinstall all packages (fixes a broken install) |
+| `--setup-only` | Set everything up without starting the app |
+
+One process serves both the backend API and the frontend pages. There's no
+Node.js, no separate frontend build step and no Docker. The launcher itself
+is `start.py`, which uses only the Python standard library.
 
 The app works immediately in **mock mode**: every screen is fully
 click-through-able with clearly-labelled placeholder data, so you can try
@@ -134,11 +160,42 @@ their current pricing before generating large numbers of sets.
 - This app has no authentication or multi-user support by design — it's
   meant to run on one person's laptop for their own family's use.
 
+## Logs and troubleshooting
+
+Everything the app does is logged, so a problem can be traced after the
+fact.
+
+- **The start window** shows the log live: every request, every processing
+  step, and every warning or error, each with its full traceback.
+- **`data/logs/app.log`** keeps the same log. It rotates at 5 MB and keeps
+  5 old files.
+- **`data/logs/setup.log`** records everything the launcher ran: Python
+  version, environment creation and package installs.
+- **In the app:**
+  - **Live log panel:** uploading a paper, building or generating a set,
+    and grading each show the server's steps as they happen.
+  - **Saved processing log:** each paper, question set and submission keeps
+    the log of how it was made (expand "Import log", "Generation log" or
+    "Grading log" on its card).
+  - **Errors:** shown with the server's explanation, the error type, and a
+    reference such as `ui-k3j9x2ab`. Click **View log** to see every log
+    line for that action.
+  - **Logs & diagnostics** (sidebar):
+    - the server log, filterable by level, reference or text
+    - system details: versions, mode, data folder, database, record counts
+    - a **Download log file** button
+- **More detail:** start with `--debug`, or set `LOG_LEVEL=DEBUG` in
+  `.env`. Debug logs add every candidate question number, crop rectangle,
+  mark-scheme row, and DeepSeek prompt and reply (truncated).
+
+When reporting a problem, include the reference from the error message and
+the downloaded log file.
+
 ## Running the tests
 
 ```
-source .venv/bin/activate   # after running run.sh at least once
-pytest
+.venv/bin/python -m pytest            # macOS/Linux, after the first ./run.sh
+.venv\Scripts\python -m pytest         # Windows, after the first run.bat
 ```
 
 Tests run entirely in mock mode — no DeepSeek API key or network access

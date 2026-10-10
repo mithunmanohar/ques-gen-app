@@ -11,6 +11,7 @@ Two outputs per row: the cell text, and the row's region on the page. The text
 layer scrambles stacked maths (fractions come out as stray digits), so the
 region is rendered as an image too and that image is what graders should trust.
 """
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,8 @@ from pathlib import Path
 import pymupdf
 
 from .paper_extraction import FOOTER_ZONE, Segment, clean_text
+
+logger = logging.getLogger(__name__)
 
 LABEL_RE = re.compile(r"^\s*(\d{1,2})((?:\([a-z]{1,4}\))*)\s*$")
 MAX_MARK_RE = re.compile(r"Maximum\s+Mark:?\s*(\d+)", re.IGNORECASE)
@@ -147,6 +150,14 @@ def parse_mark_scheme(pdf_path: Path) -> MarkSchemeResult:
         max_mark = int(m.group(1)) if m else None
         code = MS_CODE_RE.search(first_text)
         session = MS_SESSION_RE.search(first_text)
+        logger.info(
+            "Opened mark scheme %s: %d page(s); code %s, session %s, maximum mark %s",
+            pdf_path.name,
+            len(doc),
+            f"{code.group(1)}/{code.group(2)}" if code else "not found",
+            f"{session.group(1)} {session.group(2)}" if session else "not found",
+            max_mark if max_mark is not None else "not found",
+        )
 
         rows: list[MarkSchemeRow] = []
         header: Segment | None = None
@@ -154,10 +165,12 @@ def parse_mark_scheme(pdf_path: Path) -> MarkSchemeResult:
         for pno, page in enumerate(doc):
             head = _header_line(page)
             if head is None:
+                logger.debug("  mark scheme page %d: no answer table (cover/instructions page)", pno + 1)
                 continue
             rules = _column_rules(page, head.y1)
             if len(rules) < 4:
                 issues.append(f"Mark scheme page {pno + 1}: couldn't find the table's column rules; page skipped.")
+                logger.warning("Mark scheme page %d: only %d vertical rule(s) found (need 4+); page skipped", pno + 1, len(rules))
                 continue
             seps = _row_separators(page)
             table_top = min((s for s in seps if s > head.y1), default=head.y1 + 2)
@@ -182,6 +195,7 @@ def parse_mark_scheme(pdf_path: Path) -> MarkSchemeResult:
             if rows and first_top - table_top > 4:
                 carried = _cells(words, rules, table_top, first_top)
                 if any(carried[1:]):
+                    logger.info("  mark scheme page %d: row %s continues from the previous page", pno + 1, rows[-1].label)
                     _assign_cells(rows[-1], carried)
                     rows[-1].segments.append(Segment(pno, pymupdf.Rect(x0, table_top - 1, x1, first_top + 1)))
 
@@ -191,9 +205,24 @@ def parse_mark_scheme(pdf_path: Path) -> MarkSchemeResult:
                 _assign_cells(row, _cells(words, rules, top, bottom))
                 row.segments.append(Segment(pno, pymupdf.Rect(x0, top - 1, x1, bottom + 1)))
                 rows.append(row)
+                logger.debug(
+                    "  row %s: answer=%r marks=%r partial=%r", label, row.answer[:60], row.marks, row.partial_marks[:60]
+                )
+            logger.info(
+                "Mark scheme page %d: %d column(s), %d answer row(s)%s",
+                pno + 1,
+                len(rules) - 1,
+                len(starts),
+                f" ({starts[0][1]} … {starts[-1][1]})" if starts else "",
+            )
 
         if not rows:
             issues.append("No answer rows found in the mark scheme (expected a Question | Answer | Marks table).")
+        logger.info(
+            "Mark scheme parsed: %d row(s) covering %d question(s)", len(rows), len({r.question for r in rows})
+        )
+        for issue in issues:
+            logger.warning("Mark scheme check: %s", issue)
         return MarkSchemeResult(
             max_mark=max_mark,
             syllabus_code=code.group(1) if code else None,

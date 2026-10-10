@@ -79,5 +79,5 @@ async function loadQuestions() {
 paperFilter.addEventListener("change", loadQuestions);
 topicFilter.addEventListener("change", loadQuestions);
 loadFilters()
-  .catch((e) => toast(e.message, "error"))
+  .catch((e) => showError(e))
   .finally(loadQuestions);

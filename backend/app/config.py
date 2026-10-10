@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # This lets the whole app be exercised end-to-end with zero setup.
     mock_mode: bool = False
 
+    # --- Logging -----------------------------------------------------
+    # INFO shows every processing step; DEBUG adds fine detail (every
+    # candidate question number, crop rectangle, prompt sizes, ...).
+    log_level: str = "INFO"
+
     # --- Misc ------------------------------------------------------
     app_title: str = "Question Set Studio"
     cors_allow_origins: list[str] = ["*"]
@@ -66,13 +71,17 @@ class Settings(BaseSettings):
         return self.uploads_dir / "past_papers"
 
     @property
+    def logs_dir(self) -> Path:
+        return self.data_dir / "logs"
+
+    @property
     def resolved_database_url(self) -> str:
         if self.database_url:
             return self.database_url
         return f"sqlite:///{self.data_dir / 'app.db'}"
 
     def ensure_dirs(self) -> None:
-        for d in (self.data_dir, self.uploads_dir, self.source_documents_dir, self.submissions_dir, self.past_papers_dir):
+        for d in (self.data_dir, self.uploads_dir, self.source_documents_dir, self.submissions_dir, self.past_papers_dir, self.logs_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

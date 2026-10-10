@@ -73,10 +73,11 @@ async function loadSubmissions() {
         (s) => `
       <div class="card p-4">
         <div class="flex justify-between items-start gap-4">
-          <div>
+          <div class="grow">
             <div class="font-semibold">${escapeHtml(s.student_name || "(unnamed)")} ${statusBadge(s.status)}</div>
-            <div class="text-xs text-gray-500">Set #${s.question_set_id} · ${new Date(s.submitted_at).toLocaleString()} · ${s.images.length} image(s)</div>
-            ${s.status === "failed" ? `<div class="text-xs text-red-600 mt-1">${escapeHtml(s.error_message)}</div>` : ""}
+            <div class="text-xs text-gray-500">Submission #${s.id} · Set #${s.question_set_id} · ${new Date(s.submitted_at).toLocaleString()} · ${s.images.length} image(s)</div>
+            ${s.status === "failed" ? `<div class="callout callout-danger text-xs mt-2">${escapeHtml(s.error_message)}</div>` : ""}
+            ${renderLogLines(s.processing_log, "Grading log", s.status === "failed")}
           </div>
         </div>
         ${s.evaluation ? `<div class="mt-3 pt-3 border-t">${renderEvaluation(s)}</div>` : ""}
@@ -100,23 +101,29 @@ document.getElementById("submit-form").addEventListener("submit", async (ev) => 
   const resultSection = document.getElementById("result-section");
   const resultEl = document.getElementById("result");
   resultSection.classList.remove("hidden");
+  const requestId = Api.newRequestId();
+  const stopLog = startLiveLog(document.getElementById("grade-live-log"), requestId, "Uploading and grading");
+  let ok = false;
   try {
     btn.textContent = "Uploading…";
     const formData = new FormData(form);
-    const submission = await Api.postForm("/api/submissions", formData);
+    const submission = await Api.postForm("/api/submissions", formData, { requestId });
 
     btn.textContent = "Grading with DeepSeek… this can take up to a minute";
-    resultEl.innerHTML = '<p class="text-sm text-gray-500">Grading in progress…</p>';
-    const graded = await Api.postJson(`/api/submissions/${submission.id}/evaluate`, {});
+    resultEl.innerHTML = '<p class="text-sm text-gray-500">Grading in progress — follow the live log above.</p>';
+    const graded = await Api.postJson(`/api/submissions/${submission.id}/evaluate`, {}, { requestId });
 
-    resultEl.innerHTML = renderEvaluation(graded);
+    resultEl.innerHTML = renderEvaluation(graded) + renderLogLines(graded.processing_log, "Grading log");
+    ok = true;
     toast("Graded!");
     form.reset();
-    loadSubmissions();
   } catch (e) {
-    resultEl.innerHTML = `<p class="text-red-600">${escapeHtml(e.message)}</p>`;
-    toast(e.message, "error");
+    resultEl.innerHTML = `<div class="callout callout-danger text-sm">${escapeHtml(e.detail || e.message)}
+      ${e.requestId ? `<div class="text-xs mt-1">Ref ${escapeHtml(e.requestId)} · <a href="/logs.html?request_id=${encodeURIComponent(e.requestId)}" target="_blank">View full log</a></div>` : ""}</div>`;
+    showError(e, "Grading failed.");
   } finally {
+    await stopLog(ok);
+    loadSubmissions();
     btn.disabled = false;
     btn.textContent = "Upload & grade";
   }

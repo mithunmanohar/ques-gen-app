@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -10,6 +11,7 @@ from ..services import ingestion
 from ..services.evaluation import evaluate_submission
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[schemas.SubmissionOut])
@@ -51,6 +53,14 @@ async def create_submission(
                 original_filename=image.filename,
             )
         )
+        logger.info("Saved answer-sheet photo %d: %s (%.0f KB)", idx + 1, image.filename, dest_path.stat().st_size / 1024)
+    logger.info(
+        "Submission #%d created for question set #%d ('%s') with %d photo(s)",
+        submission.id,
+        question_set.id,
+        question_set.name,
+        len(images),
+    )
     db.commit()
     db.refresh(submission)
     return submission
@@ -64,7 +74,10 @@ def evaluate(submission_id: int, db: Session = Depends(get_db)):
     try:
         evaluate_submission(db, submission)
     except Exception as e:  # noqa: BLE001 — error is already recorded on the submission; report it too
-        raise HTTPException(status_code=502, detail=f"Evaluation failed: {e}") from e
+        raise HTTPException(
+            status_code=502,
+            detail=f"Grading failed ({type(e).__name__}): {e}. The submission's grading log has the details.",
+        ) from e
     db.refresh(submission)
     return submission
 

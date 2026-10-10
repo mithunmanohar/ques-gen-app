@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logs &amp; diagnostics — Question Set Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="with-sidebar">
+  <aside id="sidebar" class="sidebar no-print"></aside>
+
+  <main>
+    <header class="page-header">
+      <div class="page-header-inner">
+        <div>
+          <h1 class="page-title">Logs &amp; diagnostics</h1>
+          <p class="page-subtitle">
+            Everything the server records while it works: each request, each processing step, every warning
+            and error with its full traceback. Filter by a reference shown in an error message to see just that
+            action. When reporting a problem, download the log file and share it.
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <a class="btn btn-secondary" href="/api/logs/download">Download log file</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body wide space-y-10">
+      <section>
+        <h2 class="section-title mb-3">System</h2>
+        <div id="diagnostics" class="card p-4 text-sm">Loading…</div>
+      </section>
+
+      <section>
+        <h2 class="section-title mb-3">Server log</h2>
+        <form id="log-filters" class="card p-4 grid sm:grid-cols-4 gap-4 mb-4">
+          <div class="field">
+            <label>Minimum level</label>
+            <select name="level">
+              <option value="DEBUG">Debug (everything)</option>
+              <option value="INFO" selected>Info</option>
+              <option value="WARNING">Warnings &amp; errors</option>
+              <option value="ERROR">Errors only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Request reference</label>
+            <input type="text" name="request_id" placeholder="e.g. ui-k3j9x2ab" />
+          </div>
+          <div class="field">
+            <label>Contains text</label>
+            <input type="text" name="q" placeholder="e.g. mark scheme" />
+          </div>
+          <div class="field">
+            <label>Show last</label>
+            <select name="limit">
+              <option value="200">200 entries</option>
+              <option value="500" selected>500 entries</option>
+              <option value="2000">2000 entries</option>
+              <option value="5000">5000 entries</option>
+            </select>
+          </div>
+          <div class="sm:col-span-4 flex items-center gap-3 flex-wrap">
+            <button type="submit" class="btn btn-primary">Apply</button>
+            <button type="button" id="clear-filters" class="btn btn-secondary">Clear filters</button>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="auto-refresh" checked /> Auto-refresh every 3 s</label>
+            <span id="log-summary" class="text-xs text-gray-500 ml-auto"></span>
+          </div>
+        </form>
+        <div class="card log-table-wrap">
+          <table class="w-full log-table">
+            <thead><tr><th>Time</th><th>Level</th><th>Ref</th><th>Source</th><th>Message</th></tr></thead>
+            <tbody id="log-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/layout.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/logs.js"></script>
+</body>
+</html>

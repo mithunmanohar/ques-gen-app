@@ -24,6 +24,7 @@ swap is a one-line config change, not a code change.
 import base64
 import json
 import logging
+import time
 from pathlib import Path
 
 from openai import OpenAI
@@ -52,16 +53,38 @@ def _extract_json(raw_text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
+        logger.error("DeepSeek reply is not valid JSON (%s). First 2000 characters:\n%s", e, raw_text[:2000])
         raise DeepSeekError(f"DeepSeek did not return valid JSON: {e}\n---\n{raw_text[:2000]}") from e
+
+
+def _log_usage(kind: str, model: str, started: float, response) -> None:
+    usage = getattr(response, "usage", None)
+    logger.info(
+        "DeepSeek %s reply from %s in %.1fs%s, finish_reason=%s",
+        kind,
+        model,
+        time.perf_counter() - started,
+        f" ({usage.prompt_tokens} prompt + {usage.completion_tokens} completion tokens)" if usage else "",
+        response.choices[0].finish_reason if response.choices else "?",
+    )
 
 
 def chat_json(system_prompt: str, user_prompt: str, *, mock_response: dict) -> dict:
     settings = get_settings()
     if settings.effective_mock_mode:
-        logger.info("MOCK_MODE active (no DEEPSEEK_API_KEY set) — returning mock generation response.")
+        logger.info("MOCK MODE (no DEEPSEEK_API_KEY): returning placeholder data instead of calling DeepSeek")
         return mock_response
 
     client = _client()
+    logger.info(
+        "Calling DeepSeek %s at %s: system prompt %d chars, user prompt %d chars",
+        settings.deepseek_text_model,
+        settings.deepseek_base_url,
+        len(system_prompt),
+        len(user_prompt),
+    )
+    logger.debug("User prompt:\n%s", user_prompt[:4000])
+    started = time.perf_counter()
     try:
         response = client.chat.completions.create(
             model=settings.deepseek_text_model,
@@ -73,9 +96,14 @@ def chat_json(system_prompt: str, user_prompt: str, *, mock_response: dict) -> d
             temperature=0.7,
         )
     except Exception as e:  # noqa: BLE001 — surface any SDK/network error uniformly
-        raise DeepSeekError(f"DeepSeek chat request failed: {e}") from e
+        logger.error(
+            "DeepSeek chat request failed after %.1fs: %s: %s", time.perf_counter() - started, type(e).__name__, e
+        )
+        raise DeepSeekError(f"DeepSeek chat request failed ({type(e).__name__}): {e}") from e
 
+    _log_usage("chat", settings.deepseek_text_model, started, response)
     content = response.choices[0].message.content or ""
+    logger.debug("Reply (%d chars):\n%s", len(content), content[:4000])
     return _extract_json(content)
 
 
@@ -89,13 +117,28 @@ def _image_to_data_url(image_path: Path) -> str:
 def vision_json(system_prompt: str, user_prompt: str, image_paths: list[Path], *, mock_response: dict) -> dict:
     settings = get_settings()
     if settings.effective_mock_mode:
-        logger.info("MOCK_MODE active (no DEEPSEEK_API_KEY set) — returning mock evaluation response.")
+        logger.info(
+            "MOCK MODE (no DEEPSEEK_API_KEY): returning placeholder grading for %d image(s) instead of calling DeepSeek",
+            len(image_paths),
+        )
         return mock_response
 
     client = _client()
     content: list[dict] = [{"type": "text", "text": user_prompt}]
+    total_bytes = 0
     for image_path in image_paths:
+        total_bytes += image_path.stat().st_size
+        logger.debug("  attaching image %s (%.0f KB)", image_path.name, image_path.stat().st_size / 1024)
         content.append({"type": "image_url", "image_url": {"url": _image_to_data_url(image_path)}})
+    logger.info(
+        "Calling DeepSeek vision %s at %s: prompt %d chars, %d image(s), %.1f MB",
+        settings.deepseek_vision_model,
+        settings.deepseek_base_url,
+        len(user_prompt),
+        len(image_paths),
+        total_bytes / 1e6,
+    )
+    started = time.perf_counter()
 
     try:
         response = client.chat.completions.create(
@@ -108,10 +151,15 @@ def vision_json(system_prompt: str, user_prompt: str, image_paths: list[Path], *
             temperature=0.2,
         )
     except Exception as e:  # noqa: BLE001
+        logger.error(
+            "DeepSeek vision request failed after %.1fs: %s: %s", time.perf_counter() - started, type(e).__name__, e
+        )
         raise DeepSeekError(
             f"DeepSeek vision request failed: {e}. If this mentions an unknown/unsupported model, "
             f"double-check DEEPSEEK_VISION_MODEL in your .env against DeepSeek's current docs."
         ) from e
 
+    _log_usage("vision", settings.deepseek_vision_model, started, response)
     response_content = response.choices[0].message.content or ""
+    logger.debug("Reply (%d chars):\n%s", len(response_content), response_content[:4000])
     return _extract_json(response_content)
