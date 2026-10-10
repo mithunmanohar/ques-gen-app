@@ -49,6 +49,7 @@ ENV_EXAMPLE = ROOT / ".env.example"
 REQUIREMENTS = ROOT / "requirements.txt"
 STAMP = VENV / ".requirements.sha256"
 MIN_PYTHON = (3, 10)
+NEWEST_TESTED_PYTHON = (3, 14)
 TOTAL_STEPS = 5
 IMPORT_CHECK = "import fastapi, uvicorn, sqlalchemy, pydantic_settings, pymupdf, pypdf, openai"
 
@@ -137,6 +138,12 @@ def check_python() -> None:
             ["Install the latest Python from https://www.python.org/downloads/ and run this again."],
         )
     ok(f"Python {version} ({sys.executable})")
+    if sys.version_info[:2] > NEWEST_TESTED_PYTHON:
+        warn(
+            f"Python {sys.version_info[0]}.{sys.version_info[1]} is newer than the versions this app is tested with "
+            f"(up to {NEWEST_TESTED_PYTHON[0]}.{NEWEST_TESTED_PYTHON[1]}). If installing packages fails, install "
+            f"Python {NEWEST_TESTED_PYTHON[0]}.{NEWEST_TESTED_PYTHON[1]} from python.org and run again."
+        )
     log_setup(f"launcher started with Python {version} at {sys.executable} on {sys.platform}")
 
 
@@ -144,17 +151,44 @@ def venv_python() -> Path:
     return VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
-def venv_works() -> bool:
+def venv_version() -> tuple[int, int] | None:
+    """Python version inside .venv, or None if it's missing or broken."""
     py = venv_python()
-    return py.is_file() and subprocess.call([str(py), "-c", "import sys"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+    if not py.is_file():
+        return None
+    try:
+        out = subprocess.run(
+            [str(py), "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        major, minor = map(int, out.stdout.split())
+        return (major, minor)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def venv_works() -> bool:
+    version = venv_version()
+    return version is not None and version >= MIN_PYTHON
 
 
 def ensure_venv() -> Path:
     step(2, "Preparing the app's private Python environment (.venv)")
-    if venv_works():
-        ok(f"Using existing environment in {VENV}")
+    version = venv_version()
+    if version is not None and version >= MIN_PYTHON:
+        ok(f"Using existing environment in {VENV} (Python {version[0]}.{version[1]})")
         return venv_python()
-    if VENV.exists():
+    if version is not None:
+        # e.g. built earlier with macOS's built-in Python 3.9, which the app's packages no longer support
+        warn(
+            f"The existing .venv was built with Python {version[0]}.{version[1]}, which is too old — "
+            f"rebuilding it with Python {sys.version_info[0]}.{sys.version_info[1]}."
+        )
+        log_setup(f"rebuilding .venv: it uses Python {version[0]}.{version[1]} (< {MIN_PYTHON})")
+        shutil.rmtree(VENV, ignore_errors=True)
+    elif VENV.exists():
         warn("The existing .venv folder is broken (Python moved or upgraded?) — rebuilding it.")
         shutil.rmtree(VENV, ignore_errors=True)
     info("Creating it now (first run only)...")
