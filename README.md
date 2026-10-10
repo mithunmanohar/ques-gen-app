@@ -160,10 +160,15 @@ their current pricing before generating large numbers of sets.
   adding a local-OCR-then-text-grade pipeline (Tesseract + a text-grading
   prompt); the code is structured so that's a change inside
   `backend/app/services/evaluation.py` and `deepseek_client.py` only.
-- **`DEEPSEEK_VISION_MODEL`** in `.env`/`config.py` may need updating —
-  DeepSeek's vision-capable model offering and naming has changed over
-  time. If grading requests fail with a "model not found"/unsupported
-  error, check DeepSeek's current API docs and update that one setting.
+- **DeepSeek models:** both AI tasks default to `deepseek-flash`, which also
+  reads images. DeepSeek renames its models from time to time. If requests
+  fail with a "model not found" error, the message says which setting to
+  change: check [api-docs.deepseek.com](https://api-docs.deepseek.com) and
+  set `DEEPSEEK_TEXT_MODEL` / `DEEPSEEK_VISION_MODEL` in `.env`. For
+  higher-quality question writing, try `DEEPSEEK_TEXT_MODEL=deepseek-v4-pro`.
+  That model can't read images, so keep grading on `deepseek-flash`.
+- **Answer-sheet photos** must be JPEG, PNG, GIF or WebP. iPhone HEIC photos
+  are rejected at upload, with instructions for converting them.
 - This app has no authentication or multi-user support by design — it's
   meant to run on one person's laptop for their own family's use.
 

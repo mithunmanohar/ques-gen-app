@@ -34,8 +34,8 @@
         </div>
         <div class="field">
           <label>Answer sheet photo(s)</label>
-          <input type="file" name="images" accept="image/*" multiple required />
-          <p class="text-xs text-gray-500 mt-1">Select multiple files (or multiple pages) if the answers span more than one photo.</p>
+          <input type="file" name="images" accept=".jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/png,image/gif,image/webp" multiple required />
+          <p class="text-xs text-gray-500 mt-1">Select multiple files (or multiple pages) if the answers span more than one photo. JPEG, PNG, GIF or WebP — iPhone HEIC photos need converting to JPEG first.</p>
         </div>
         <button type="submit" id="submit-btn" class="btn btn-primary">Upload &amp; grade</button>
       </form>
