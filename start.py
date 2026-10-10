@@ -49,6 +49,7 @@ ENV_EXAMPLE = ROOT / ".env.example"
 REQUIREMENTS = ROOT / "requirements.txt"
 STAMP = VENV / ".requirements.sha256"
 MIN_PYTHON = (3, 10)
+NEWEST_TESTED_PYTHON = (3, 14)
 TOTAL_STEPS = 5
 IMPORT_CHECK = "import fastapi, uvicorn, sqlalchemy, pydantic_settings, pymupdf, pypdf, openai"
 
@@ -137,6 +138,12 @@ def check_python() -> None:
             ["Install the latest Python from https://www.python.org/downloads/ and run this again."],
         )
     ok(f"Python {version} ({sys.executable})")
+    if sys.version_info[:2] > NEWEST_TESTED_PYTHON:
+        warn(
+            f"Python {sys.version_info[0]}.{sys.version_info[1]} is newer than the versions this app is tested with "
+            f"(up to {NEWEST_TESTED_PYTHON[0]}.{NEWEST_TESTED_PYTHON[1]}). If installing packages fails, install "
+            f"Python {NEWEST_TESTED_PYTHON[0]}.{NEWEST_TESTED_PYTHON[1]} from python.org and run again."
+        )
     log_setup(f"launcher started with Python {version} at {sys.executable} on {sys.platform}")
 
 

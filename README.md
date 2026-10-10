@@ -21,14 +21,16 @@ part of the app does and why it's built this way.
 
 ## Quick start (no technical knowledge needed)
 
-**You need:** Python 3.10 or newer. If you don't have it, install it from
+**You need:** Python 3.10 or newer (3.10–3.14 are tested). If you don't have it, install it from
 [python.org/downloads](https://www.python.org/downloads/). On Windows, tick
 **"Add python.exe to PATH"** in the installer.
 
 > **macOS:** the `python3` that comes with macOS (from Apple's developer
 > tools) is Python 3.9, which is too old. Install a current Python from
-> python.org (or with `brew install python`). The launcher automatically
-> uses the newest Python 3.10+ it finds.
+> python.org (or with `brew install python`). It's fine if `python3` still
+> says 3.9 afterwards. The launcher looks for the new one by its versioned
+> name (`python3.14`, `python3.13`, …), including in the python.org and
+> Homebrew install folders, and prints which Python it uses.
 
 1. Download this folder (on GitHub: **Code → Download ZIP**, then unzip it).
 2. Start the app:
@@ -204,7 +206,12 @@ the downloaded log file.
   the launcher again. It notices the outdated `.venv` and rebuilds it
   automatically.
 - **"Python 3.10 or newer was not found":** install it from python.org. On
-  Windows, tick "Add python.exe to PATH", then start `run.bat` again.
+  Windows, tick "Add python.exe to PATH", then start `run.bat` again. On
+  macOS, open a new Terminal window after installing.
+- **`python3 --version` still shows 3.9 on macOS:** that's expected and
+  harmless. You don't need to change it, because the launcher finds the newer
+  Python itself. To use it by hand, call it by version, e.g.
+  `python3.14 start.py`.
 - **Package installation fails:** check your internet connection or proxy,
   then run again with `--reinstall`. The full pip output is in
   `data/logs/setup.log`.
