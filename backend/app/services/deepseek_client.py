@@ -69,13 +69,53 @@ def _log_usage(kind: str, model: str, started: float, response) -> None:
     )
 
 
+# DeepSeek's JSON mode "may occasionally return empty content"; one retry is cheap.
+EMPTY_REPLY_RETRIES = 1
+
+
+def _complete_json(kind: str, model: str, messages: list[dict], temperature: float, started: float) -> dict:
+    client = _client()
+    for attempt in range(1, EMPTY_REPLY_RETRIES + 2):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=temperature,
+            )
+        except Exception as e:  # noqa: BLE001 — surface any SDK/network error uniformly
+            logger.error(
+                "DeepSeek %s request failed after %.1fs: %s: %s", kind, time.perf_counter() - started, type(e).__name__, e
+            )
+            hint = ""
+            if "model" in str(e).lower():
+                hint = (
+                    f" The model '{model}' may not exist on DeepSeek any more — check the model names on "
+                    "https://api-docs.deepseek.com and set DEEPSEEK_TEXT_MODEL / DEEPSEEK_VISION_MODEL in .env."
+                )
+            raise DeepSeekError(f"DeepSeek {kind} request failed ({type(e).__name__}): {e}.{hint}") from e
+
+        _log_usage(kind, model, started, response)
+        choice = response.choices[0] if response.choices else None
+        content = (choice.message.content if choice else "") or ""
+        logger.debug("Reply (%d chars):\n%s", len(content), content[:4000])
+        if choice is not None and choice.finish_reason == "length":
+            raise DeepSeekError(
+                f"DeepSeek's {kind} reply was cut off (it hit the output length limit) before the JSON was complete. "
+                "Try a smaller question set or fewer/smaller photos."
+            )
+        if content.strip():
+            return _extract_json(content)
+        logger.warning("DeepSeek returned an empty reply (attempt %d) — retrying", attempt)
+    raise DeepSeekError(f"DeepSeek returned an empty {kind} reply {EMPTY_REPLY_RETRIES + 1} times in a row. Try again.")
+
+
 def chat_json(system_prompt: str, user_prompt: str, *, mock_response: dict) -> dict:
     settings = get_settings()
     if settings.effective_mock_mode:
         logger.info("MOCK MODE (no DEEPSEEK_API_KEY): returning placeholder data instead of calling DeepSeek")
         return mock_response
 
-    client = _client()
     logger.info(
         "Calling DeepSeek %s at %s: system prompt %d chars, user prompt %d chars",
         settings.deepseek_text_model,
@@ -84,27 +124,8 @@ def chat_json(system_prompt: str, user_prompt: str, *, mock_response: dict) -> d
         len(user_prompt),
     )
     logger.debug("User prompt:\n%s", user_prompt[:4000])
-    started = time.perf_counter()
-    try:
-        response = client.chat.completions.create(
-            model=settings.deepseek_text_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.7,
-        )
-    except Exception as e:  # noqa: BLE001 — surface any SDK/network error uniformly
-        logger.error(
-            "DeepSeek chat request failed after %.1fs: %s: %s", time.perf_counter() - started, type(e).__name__, e
-        )
-        raise DeepSeekError(f"DeepSeek chat request failed ({type(e).__name__}): {e}") from e
-
-    _log_usage("chat", settings.deepseek_text_model, started, response)
-    content = response.choices[0].message.content or ""
-    logger.debug("Reply (%d chars):\n%s", len(content), content[:4000])
-    return _extract_json(content)
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    return _complete_json("chat", settings.deepseek_text_model, messages, 0.7, time.perf_counter())
 
 
 def _image_to_data_url(image_path: Path) -> str:
@@ -123,7 +144,6 @@ def vision_json(system_prompt: str, user_prompt: str, image_paths: list[Path], *
         )
         return mock_response
 
-    client = _client()
     content: list[dict] = [{"type": "text", "text": user_prompt}]
     total_bytes = 0
     for image_path in image_paths:
@@ -138,28 +158,6 @@ def vision_json(system_prompt: str, user_prompt: str, image_paths: list[Path], *
         len(image_paths),
         total_bytes / 1e6,
     )
-    started = time.perf_counter()
-
-    try:
-        response = client.chat.completions.create(
-            model=settings.deepseek_vision_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.2,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.error(
-            "DeepSeek vision request failed after %.1fs: %s: %s", time.perf_counter() - started, type(e).__name__, e
-        )
-        raise DeepSeekError(
-            f"DeepSeek vision request failed: {e}. If this mentions an unknown/unsupported model, "
-            f"double-check DEEPSEEK_VISION_MODEL in your .env against DeepSeek's current docs."
-        ) from e
-
-    _log_usage("vision", settings.deepseek_vision_model, started, response)
-    response_content = response.choices[0].message.content or ""
-    logger.debug("Reply (%d chars):\n%s", len(response_content), response_content[:4000])
-    return _extract_json(response_content)
+    # Images are only allowed in user messages (DeepSeek returns 400 otherwise).
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": content}]
+    return _complete_json("vision", settings.deepseek_vision_model, messages, 0.2, time.perf_counter())

@@ -29,12 +29,12 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     # Text model used for question-set generation.
-    deepseek_text_model: str = "deepseek-chat"
+    deepseek_text_model: str = "deepseek-flash"
     # Vision-capable model used to read + grade photographed answer sheets.
-    # DeepSeek's vision offering has changed names before — if grading
-    # requests start failing with a "model not found" style error, check
-    # DeepSeek's current API docs and update this value in .env.
-    deepseek_vision_model: str = "deepseek-vl2"
+    # Must accept images (DeepSeek's "Vision" column). DeepSeek renames
+    # models from time to time — if requests fail with a "model not found"
+    # style error, check https://api-docs.deepseek.com and set this in .env.
+    deepseek_vision_model: str = "deepseek-flash"
 
     # If true (or no API key is configured), generation/evaluation calls
     # return realistic canned data instead of calling out to DeepSeek.

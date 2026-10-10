@@ -1,5 +1,6 @@
 import logging
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -12,6 +13,29 @@ from ..services.evaluation import evaluate_submission
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 logger = logging.getLogger(__name__)
+
+# What DeepSeek's vision model accepts.
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+HEIC_BRANDS = (b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1")
+HEIC_HINT = (
+    "iPhone HEIC photos can't be graded. Re-save it as JPEG (on a Mac: open in Preview → File → Export → JPEG), "
+    "or set the iPhone to Settings → Camera → Formats → Most Compatible and retake it."
+)
+
+
+async def _check_image(upload: UploadFile) -> None:
+    name = upload.filename or "(unnamed file)"
+    ext = Path(name).suffix.lower()
+    head = await upload.read(16)
+    await upload.seek(0)
+    if ext in (".heic", ".heif") or (head[4:8] == b"ftyp" and head[8:12] in HEIC_BRANDS):
+        raise HTTPException(status_code=400, detail=f"'{name}' is a HEIC/HEIF photo. {HEIC_HINT}")
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{name}' isn't a supported photo type. Use JPEG, PNG, GIF or WebP "
+            f"({', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}).",
+        )
 
 
 @router.get("", response_model=list[schemas.SubmissionOut])
@@ -34,6 +58,8 @@ async def create_submission(
         raise HTTPException(status_code=404, detail="Question set not found")
     if not images:
         raise HTTPException(status_code=400, detail="At least one answer-sheet image is required")
+    for image in images:
+        await _check_image(image)
 
     submission = models.Submission(question_set_id=question_set_id, student_name=student_name)
     db.add(submission)
