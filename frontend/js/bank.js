@@ -15,9 +15,9 @@ function markSchemeHtml(q) {
 
 function questionCard(q) {
   const flags = q.flags.length
-    ? `<ul class="text-xs mt-2 p-2 rounded border bg-amber-50 border-amber-200 text-amber-800">${q.flags
-        .map((f) => `<li>⚠️ ${escapeHtml(f)}</li>`)
-        .join("")}</ul>`
+    ? `<div class="callout callout-warning text-xs mt-2"><ul>${q.flags
+        .map((f) => `<li>${escapeHtml(f)}</li>`)
+        .join("")}</ul></div>`
     : "";
   return `
     <div class="card p-4">
@@ -70,7 +70,7 @@ async function loadQuestions() {
     summary.textContent = `${questions.length} question(s) · ${marks} marks${flagged ? ` · ${flagged} flagged` : ""}`;
     list.innerHTML = questions.length
       ? questions.map(questionCard).join("")
-      : '<p class="text-sm text-gray-500">No questions yet — upload a past paper in Admin.</p>';
+      : '<p class="text-sm text-gray-500">No questions yet — upload a past paper in <a href="/admin.html">Papers &amp; patterns</a>.</p>';
   } catch (e) {
     list.innerHTML = `<p class="text-sm text-red-600">Failed to load: ${escapeHtml(e.message)}</p>`;
   }

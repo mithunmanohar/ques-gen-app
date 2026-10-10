@@ -56,7 +56,7 @@ their current pricing before generating large numbers of sets.
 
 ## How it's used
 
-1. **Admin** (`/admin.html`):
+1. **Papers & patterns** (`/admin.html`):
    - **Cambridge past papers:** upload a question paper PDF plus its mark
      scheme PDF. Extraction is fully automatic, with no review step. The
      paper card shows the question count and marks, and lists any warnings
@@ -69,7 +69,7 @@ their current pricing before generating large numbers of sets.
 2. **Question bank** (`/bank.html`) — browse every extracted question
    exactly as it will print, with its marks, topics, any warnings, and the
    official mark-scheme rows.
-3. **Generate** (`/generate.html`):
+3. **Question sets** (`/generate.html`):
    - **From the bank:** set a marks target and optionally pick papers or
      topics. Questions are drawn at random with no repeats and are
      renumbered.
@@ -77,7 +77,7 @@ their current pricing before generating large numbers of sets.
      hidden answer key.
 
    View or print any set, or its answer key, from here.
-4. **Submit & Evaluate** (`/evaluate.html`) — print a set, have your child
+4. **Submit & grade** (`/evaluate.html`) — print a set, have your child
    solve it on paper, photograph the completed sheet, and upload it here.
    DeepSeek reads the handwriting directly from the photo(s) and grades it
    against the answer key, question by question, with feedback. For bank
@@ -88,7 +88,10 @@ their current pricing before generating large numbers of sets.
 - **Backend:** FastAPI + SQLAlchemy + SQLite (`backend/app/`). No auth —
   this is a single-user local app.
 - **Frontend:** plain HTML/CSS/JS, no framework, no build step
-  (`frontend/`), served as static files directly by FastAPI.
+  (`frontend/`), served as static files directly by FastAPI. The left
+  sidebar is rendered once by `js/layout.js`, and the flat theme's colours
+  are CSS variables at the top of `css/style.css`. Nothing is loaded from a
+  CDN, so the UI works offline.
 - **Storage:** everything lives under `data/` (gitignored): the SQLite
   database, uploaded source documents, past papers with their cropped
   question images, and submitted answer-sheet photos. Delete that folder
@@ -96,7 +99,7 @@ their current pricing before generating large numbers of sets.
   older version is upgraded in place on startup.
 - **Spec-driven generation:** the exam blueprint is a JSON document
   validated against [`config/pattern.schema.json`](config/pattern.schema.json).
-  Edit it by hand, or through the form in the Admin page.
+  Edit it by hand, or through the form on the Papers & patterns page.
 
 ## Limitations / things to know
 
@@ -115,7 +118,7 @@ their current pricing before generating large numbers of sets.
 - **Past-paper content** is © UCLES/Cambridge. The bank is meant for your
   own family's practice and is never shared or published anywhere.
 - **PDF text extraction** (for reference documents) only works on text-based PDFs. A scanned/photographed
-  past paper (image-only PDF) will extract little or no text; the Admin
+  past paper (image-only PDF) will extract little or no text; the Papers & patterns
   page will warn you when that happens. It can still be uploaded, it just
   won't contribute reference text to generation.
 - **Grading uses DeepSeek's vision model directly** on the photographed

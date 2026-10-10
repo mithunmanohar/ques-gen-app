@@ -3,77 +3,98 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Question Set Studio</title>
+  <title>Overview — Question Set Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <nav class="nav no-print">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
-      <span class="text-white font-bold">📚 Question Set Studio</span>
-      <a href="/index.html" class="active">Home</a>
-      <a href="/admin.html">Admin</a>
-      <a href="/bank.html">Question bank</a>
-      <a href="/generate.html">Generate</a>
-      <a href="/evaluate.html">Submit &amp; Evaluate</a>
+<body class="with-sidebar">
+  <aside id="sidebar" class="sidebar no-print"></aside>
+
+  <main>
+    <header class="page-header">
+      <div class="page-header-inner">
+        <div>
+          <div class="page-eyebrow">Question Set Studio</div>
+          <h1 class="page-title">Overview</h1>
+          <p class="page-subtitle">
+            Build practice papers from real Cambridge past-paper questions or AI-written ones, print them,
+            and grade photographed answer sheets against the official mark scheme.
+          </p>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body wide space-y-10">
+      <div id="mode-banner"></div>
+
+      <section>
+        <h2 class="section-title">At a glance</h2>
+        <div class="grid sm:grid-cols-4 gap-4 mt-3">
+          <div class="card stat"><div class="stat-label">Past papers</div><div class="stat-value" id="stat-papers">–</div></div>
+          <div class="card stat"><div class="stat-label">Bank questions</div><div class="stat-value" id="stat-questions">–</div></div>
+          <div class="card stat"><div class="stat-label">Question sets</div><div class="stat-value" id="stat-sets">–</div></div>
+          <div class="card stat"><div class="stat-label">Graded submissions</div><div class="stat-value" id="stat-graded">–</div></div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Workflow</h2>
+        <p class="section-desc">Four steps, from source papers to a graded attempt.</p>
+        <div class="grid sm:grid-cols-4 gap-4">
+          <a href="/admin.html" class="card step-card">
+            <div class="step-num">1</div>
+            <div class="font-semibold mb-1">Add papers</div>
+            <p class="text-sm text-gray-600">Upload Cambridge question papers with their mark schemes, or reference documents and patterns for AI generation.</p>
+          </a>
+          <a href="/bank.html" class="card step-card">
+            <div class="step-num">2</div>
+            <div class="font-semibold mb-1">Review the bank</div>
+            <p class="text-sm text-gray-600">Every question is cropped automatically. Check what was extracted and any warnings.</p>
+          </a>
+          <a href="/generate.html" class="card step-card">
+            <div class="step-num">3</div>
+            <div class="font-semibold mb-1">Build a set</div>
+            <p class="text-sm text-gray-600">Pick questions to a marks target and topic, or generate new ones from a pattern. Print it.</p>
+          </a>
+          <a href="/evaluate.html" class="card step-card">
+            <div class="step-num">4</div>
+            <div class="font-semibold mb-1">Grade</div>
+            <p class="text-sm text-gray-600">Upload photos of the completed sheet and get marks and feedback per question.</p>
+          </a>
+        </div>
+      </section>
     </div>
-  </nav>
-
-  <main class="max-w-5xl mx-auto px-4 py-10">
-    <h1 class="text-2xl font-bold mb-2">Welcome</h1>
-    <p class="text-gray-600 mb-8">
-      A local tool for building practice question sets — either by re-using real
-      Cambridge past-paper questions (cropped straight from the PDFs, diagrams and
-      official mark schemes included) or by having DeepSeek write fresh,
-      pattern-matched questions — and grading your child's photographed answer
-      sheets against them.
-    </p>
-
-    <div class="grid sm:grid-cols-3 gap-4">
-      <a href="/admin.html" class="card p-5 block hover:shadow-md transition">
-        <div class="text-3xl mb-2">🗂️</div>
-        <h2 class="font-semibold mb-1">1. Admin</h2>
-        <p class="text-sm text-gray-600">
-          Upload Cambridge question papers + mark schemes to fill the question
-          bank, or reference documents and exam blueprints ("patterns") for AI
-          generation.
-        </p>
-      </a>
-      <a href="/generate.html" class="card p-5 block hover:shadow-md transition">
-        <div class="text-3xl mb-2">✨</div>
-        <h2 class="font-semibold mb-1">2. Generate</h2>
-        <p class="text-sm text-gray-600">
-          Build sets from the bank by marks and topic, or generate brand-new
-          questions that follow a pattern exactly.
-        </p>
-      </a>
-      <a href="/evaluate.html" class="card p-5 block hover:shadow-md transition">
-        <div class="text-3xl mb-2">📝</div>
-        <h2 class="font-semibold mb-1">3. Submit &amp; Evaluate</h2>
-        <p class="text-sm text-gray-600">
-          Print a set for your child to solve on paper, then upload a photo of
-          the completed answer sheet to get it graded.
-        </p>
-      </a>
-    </div>
-
-    <div id="health-banner" class="mt-8 text-sm"></div>
   </main>
 
+  <script src="/js/layout.js"></script>
   <script src="/js/api.js"></script>
   <script>
-    Api.get("/api/health").then((h) => {
-      const el = document.getElementById("health-banner");
-      if (h.mock_mode) {
-        el.innerHTML =
-          '<div class="card p-4 bg-amber-50 border-amber-200 text-amber-800">' +
-          '⚠️ Running in <strong>mock mode</strong> — no DEEPSEEK_API_KEY is set in your .env, so ' +
-          "generation and grading return placeholder data. The app is fully click-through-able like this; " +
-          "add a real key any time. See README.md.</div>";
-      }
-    }).catch(() => {
-      document.getElementById("health-banner").innerHTML =
-        '<div class="card p-4 bg-red-50 border-red-200 text-red-800">Could not reach the backend API. Is it running?</div>';
-    });
+    function setStat(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    Api.get("/api/health")
+      .then((h) => {
+        if (h.mock_mode) {
+          document.getElementById("mode-banner").innerHTML =
+            '<div class="callout callout-warning text-sm"><strong>Mock mode.</strong> No DEEPSEEK_API_KEY is set in .env, ' +
+            "so AI generation, topic tagging and grading return placeholder data. Past-paper extraction works fully. See README.md.</div>";
+        }
+      })
+      .catch(() => {
+        document.getElementById("mode-banner").innerHTML =
+          '<div class="callout callout-danger text-sm">Could not reach the backend API. Is it running?</div>';
+      });
+
+    Promise.all([Api.get("/api/past-papers"), Api.get("/api/question-sets"), Api.get("/api/submissions")])
+      .then(([papers, sets, submissions]) => {
+        const ready = papers.filter((p) => p.status === "ready");
+        setStat("stat-papers", ready.length);
+        setStat("stat-questions", ready.reduce((sum, p) => sum + p.question_count, 0));
+        setStat("stat-sets", sets.filter((s) => s.status === "ready").length);
+        setStat("stat-graded", submissions.filter((s) => s.status === "evaluated").length);
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>

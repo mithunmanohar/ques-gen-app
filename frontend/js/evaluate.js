@@ -22,6 +22,12 @@ function statusBadge(status) {
   return `<span class="badge badge-${status}">${status}</span>`;
 }
 
+function markBadge(item) {
+  if (item.is_correct) return '<span class="badge badge-ready">Full</span>';
+  if (item.marks_awarded > 0) return '<span class="badge badge-processing">Partial</span>';
+  return '<span class="badge badge-failed">None</span>';
+}
+
 function renderEvaluation(submission) {
   const ev = submission.evaluation;
   if (!ev) {
@@ -45,7 +51,7 @@ function renderEvaluation(submission) {
     html += `<tr class="border-b align-top">
       <td class="py-1 pr-2">${i + 1}</td>
       <td class="py-1 pr-2">${escapeHtml(item.extracted_answer)}</td>
-      <td class="py-1 pr-2 whitespace-nowrap">${item.is_correct ? "✅" : "❌"} ${item.marks_awarded}/${item.marks_possible}</td>
+      <td class="py-1 pr-2 whitespace-nowrap">${markBadge(item)} ${item.marks_awarded}/${item.marks_possible}</td>
       <td class="py-1">${escapeHtml(item.feedback)}</td>
     </tr>`;
   });
