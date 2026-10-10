@@ -3,7 +3,7 @@ async function loadPatternOptions() {
   try {
     const patterns = await Api.get("/api/patterns");
     if (!patterns.length) {
-      select.innerHTML = '<option value="">No patterns yet — create one in Admin first</option>';
+      select.innerHTML = '<option value="">No patterns yet — create one in Papers & patterns first</option>';
       return;
     }
     select.innerHTML = patterns
@@ -50,7 +50,7 @@ async function loadBankChecks() {
         </label>`
           )
           .join("")
-      : 'No past papers in the bank yet — upload some in <a href="/admin.html">Admin</a>.';
+      : 'No past papers in the bank yet — upload some in <a href="/admin.html">Papers &amp; patterns</a>.';
     topicsEl.innerHTML = topics.length
       ? topics
           .map(

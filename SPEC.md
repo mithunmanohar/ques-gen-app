@@ -29,7 +29,7 @@ comes from one of two sources:
 ## 3. The three-stage flow
 
 ```
- Admin page                Generate page              Submit & Evaluate page
+ Papers & patterns         Question sets              Submit & grade
 ┌────────────────┐        ┌─────────────────┐        ┌───────────────────────┐
 │ Upload past     │        │ Pick a Pattern   │        │ Print a Question Set   │
 │ papers (PDF/MD) │──text─▶│ + source docs    │──────▶ │ → child solves on paper│
@@ -83,7 +83,7 @@ the same mechanism covers any CBSE subject/class. Shape:
 }
 ```
 
-Non-technical editing path: the Admin page's pattern editor is a proper
+Non-technical editing path: the Papers & patterns page's pattern editor is a proper
 form — name/subject/grade fields, a repeatable "Sections" list (name,
 question type dropdown, question count, marks, optional internal-choice
 count, optional difficulty mix), with total marks/questions computed and
@@ -218,7 +218,7 @@ would have, clearly labelled `[MOCK]`. This means:
 - Multiple children/profiles if this ever needs to serve more than one kid
   from the same install.
 - `GET /api/patterns/schema` already exists (served for tooling/API
-  consumers) but the Admin form (§5) doesn't derive itself from it — the
+  consumers) but the pattern form (§5) doesn't derive itself from it — the
   form's fields were hand-built to match the schema. If the schema changes
   meaningfully, both need updating together today.
 

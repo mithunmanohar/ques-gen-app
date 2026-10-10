@@ -4,31 +4,46 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Question Set — Question Set Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <nav class="nav no-print">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
-      <span class="text-white font-bold">📚 Question Set Studio</span>
-      <a href="/index.html">Home</a>
-      <a href="/admin.html">Admin</a>
-      <a href="/bank.html">Question bank</a>
-      <a href="/generate.html">Generate</a>
-      <a href="/evaluate.html">Submit &amp; Evaluate</a>
-      <button class="btn btn-secondary ml-auto" onclick="window.print()">Print</button>
-    </div>
-  </nav>
+<body class="with-sidebar">
+  <aside id="sidebar" class="sidebar no-print"></aside>
 
-  <main class="max-w-3xl mx-auto px-4 py-10">
-    <div id="content">Loading…</div>
+  <main>
+    <header class="page-header">
+      <div class="page-header-inner" style="max-width: 50rem">
+        <div>
+          <div class="page-eyebrow"><a href="/generate.html">Question sets</a> / <span id="crumb-view">Paper</span></div>
+          <h1 class="page-title" id="set-title">Loading…</h1>
+          <p class="page-subtitle" id="set-meta"></p>
+        </div>
+        <div class="flex gap-2">
+          <a class="btn btn-secondary" id="toggle-key" href="#">Answer key</a>
+          <button class="btn btn-primary" onclick="window.print()">Print</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body" style="max-width: 54rem">
+      <div id="notice" class="mb-4 no-print"></div>
+      <div class="paper-sheet" id="content">Loading…</div>
+    </div>
   </main>
 
+  <script src="/js/layout.js"></script>
   <script src="/js/api.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
     const setId = params.get("id");
     const showKey = params.get("key") === "1";
     const content = document.getElementById("content");
+    const notice = document.getElementById("notice");
+
+    const toggle = document.getElementById("toggle-key");
+    toggle.href = showKey ? `/set.html?id=${setId}` : `/set.html?id=${setId}&key=1`;
+    toggle.textContent = showKey ? "Student paper" : "Answer key";
+    document.getElementById("crumb-view").textContent = showKey ? "Answer key" : "Student paper";
 
     if (!setId) {
       content.innerHTML = '<p class="text-red-600">No question set id given.</p>';
@@ -65,7 +80,7 @@
           <img class="question-img" src="${q.image_url}" alt="Question ${number}" />
         </div>`;
       if (showKey) {
-        html += `<div class="mt-2 text-sm bg-green-50 border border-green-200 rounded p-2">
+        html += `<div class="mt-2 text-sm callout">
           <div class="text-xs text-gray-600 mb-1">Source: ${escapeHtml(q.source_label)}</div>
           ${q.answer_key_image_url
             ? `<img class="question-img" src="${q.answer_key_image_url}" alt="Mark scheme for question ${number}" />`
@@ -80,23 +95,37 @@
     function render(set) {
       document.title = `${set.name} — Question Set Studio`;
       const sections = groupBySection(set.questions);
+      const total = set.questions.reduce((sum, q) => sum + q.marks, 0);
+      document.getElementById("set-title").textContent = set.name;
+      document.getElementById("set-meta").textContent = [
+        set.subject,
+        set.grade ? `Grade ${set.grade}` : "",
+        `${set.questions.length} questions`,
+        `${total} marks`,
+        set.source === "bank" ? "Past-paper bank" : "AI-generated",
+      ].filter(Boolean).join(" · ");
+
+      const notices = [];
+      if (showKey) {
+        notices.push('<div class="callout callout-danger text-sm"><strong>Answer key.</strong> For the teacher or parent only. Do not print this for the student.</div>');
+      }
+      if (set.status === "ready" && set.error_message) {
+        notices.push(`<div class="callout callout-warning text-sm">${escapeHtml(set.error_message)}</div>`);
+      }
+      notice.innerHTML = notices.join('<div class="mt-2"></div>');
+
       let html = `
         <div class="text-center mb-8">
-          <h1 class="text-xl font-bold">${escapeHtml(set.name)}</h1>
-          <p class="text-sm text-gray-600">${escapeHtml(set.subject)} ${set.grade ? "· Grade " + escapeHtml(set.grade) : ""}</p>
-          ${showKey ? '<p class="text-xs font-bold text-red-600 mt-2 no-print">⚠️ ANSWER KEY — for the teacher/parent only, do not print for the student</p>' : ""}
+          <h1>${escapeHtml(set.name)}</h1>
+          <p class="text-sm text-gray-600 mt-1">${escapeHtml(set.subject)} ${set.grade ? "· Grade " + escapeHtml(set.grade) : ""}</p>
         </div>`;
 
       if (set.status !== "ready") {
-        html += `<p class="text-amber-700">This set is ${escapeHtml(set.status)}${set.error_message ? ": " + escapeHtml(set.error_message) : "."}</p>`;
+        html += `<div class="callout callout-warning">This set is ${escapeHtml(set.status)}${set.error_message ? ": " + escapeHtml(set.error_message) : "."}</div>`;
         content.innerHTML = html;
         return;
       }
-      if (set.error_message) {
-        html += `<p class="text-sm text-amber-700 mb-4 no-print">⚠️ ${escapeHtml(set.error_message)}</p>`;
-      }
       if (set.source === "bank") {
-        const total = set.questions.reduce((sum, q) => sum + q.marks, 0);
         html += `<p class="text-sm text-center mb-6">Answer all questions. Total: ${total} marks.</p>`;
       }
 
@@ -120,7 +149,7 @@
             html += `<div class="border-b border-dashed border-gray-300 h-10 mt-2"></div>`;
           }
           if (showKey) {
-            html += `<div class="mt-2 text-sm bg-green-50 border border-green-200 rounded p-2">
+            html += `<div class="mt-2 text-sm callout">
               <div><strong>Expected answer:</strong> ${escapeHtml(q.expected_answer)}</div>
               <div><strong>Rubric:</strong> ${escapeHtml(q.rubric)}</div>
             </div>`;

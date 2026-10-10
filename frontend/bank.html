@@ -4,26 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Question bank — Question Set Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <nav class="nav no-print">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
-      <span class="text-white font-bold">📚 Question Set Studio</span>
-      <a href="/index.html">Home</a>
-      <a href="/admin.html">Admin</a>
-      <a href="/bank.html" class="active">Question bank</a>
-      <a href="/generate.html">Generate</a>
-      <a href="/evaluate.html">Submit &amp; Evaluate</a>
-    </div>
-  </nav>
+<body class="with-sidebar">
+  <aside id="sidebar" class="sidebar no-print"></aside>
 
-  <main class="max-w-3xl mx-auto px-4 py-10">
-    <h1 class="text-xl font-bold mb-1">Question bank</h1>
-    <p class="text-sm text-gray-600 mb-4">
-      Every question extracted from your uploaded past papers, exactly as it will print. Open
-      "Mark scheme" to see the official answer the grader uses.
-    </p>
+  <main>
+    <header class="page-header">
+      <div class="page-header-inner">
+        <div>
+          <h1 class="page-title">Question bank</h1>
+          <p class="page-subtitle">Every question extracted from your uploaded past papers, exactly as it will print. Open "Mark scheme" to see the official answer the grader uses.</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body narrow">
 
     <div class="card p-4 grid sm:grid-cols-2 gap-4 mb-6">
       <div class="field"><label>Paper</label><select id="paper-filter"></select></div>
@@ -32,8 +29,10 @@
 
     <div id="summary" class="text-sm text-gray-600 mb-3"></div>
     <div id="question-list" class="space-y-5"></div>
+    </div>
   </main>
 
+  <script src="/js/layout.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/bank.js"></script>
 </body>

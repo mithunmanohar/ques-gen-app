@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin — Question Set Studio</title>
+  <title>Papers &amp; patterns — Question Set Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <nav class="nav no-print">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
-      <span class="text-white font-bold">📚 Question Set Studio</span>
-      <a href="/index.html">Home</a>
-      <a href="/admin.html" class="active">Admin</a>
-      <a href="/bank.html">Question bank</a>
-      <a href="/generate.html">Generate</a>
-      <a href="/evaluate.html">Submit &amp; Evaluate</a>
-    </div>
-  </nav>
+<body class="with-sidebar">
+  <aside id="sidebar" class="sidebar no-print"></aside>
 
-  <main class="max-w-5xl mx-auto px-4 py-10 space-y-12">
+  <main>
+    <header class="page-header">
+      <div class="page-header-inner">
+        <div>
+          <h1 class="page-title">Papers &amp; patterns</h1>
+          <p class="page-subtitle">Add Cambridge past papers to the question bank, and manage the reference documents and patterns used for AI generation.</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body wide space-y-12">
     <section>
-      <h1 class="text-xl font-bold mb-1">Cambridge past papers → question bank</h1>
-      <p class="text-sm text-gray-600 mb-4">
+      <h2 class="section-title">Cambridge past papers → question bank</h2>
+      <p class="section-desc">
         Upload a Cambridge (CAIE) question paper PDF and, ideally, its mark scheme. Every question is
         cropped out automatically as an image (diagrams included), its marks are read, the mark
         scheme's answers are attached, and topics are tagged. Automatic checks flag anything that
@@ -50,8 +52,8 @@
     </section>
 
     <section>
-      <h1 class="text-xl font-bold mb-1">Reference documents for AI generation</h1>
-      <p class="text-sm text-gray-600 mb-4">
+      <h2 class="section-title">Reference documents for AI generation</h2>
+      <p class="section-desc">
         Upload PDF, Markdown, or plain-text past papers or notes. Text is extracted automatically and used as
         reference material when DeepSeek writes brand-new questions from a pattern. (Scanned/image-only PDFs
         won't extract well — see README.)
@@ -75,8 +77,8 @@
     </section>
 
     <section>
-      <h1 class="text-xl font-bold mb-1">Question set patterns (exam blueprint)</h1>
-      <p class="text-sm text-gray-600 mb-4">
+      <h2 class="section-title">Question set patterns (exam blueprint)</h2>
+      <p class="section-desc">
         A pattern is the spec generation follows: sections, question types, marks, and counts.
         Build it with the form below — no JSON editing required. Total marks/questions are worked
         out for you. Power users can view or paste raw JSON under "Advanced" at the bottom.
@@ -125,8 +127,10 @@
 
       <div id="pattern-list" class="space-y-3"></div>
     </section>
+    </div>
   </main>
 
+  <script src="/js/layout.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
 </body>

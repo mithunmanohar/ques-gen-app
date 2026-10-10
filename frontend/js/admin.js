@@ -70,7 +70,7 @@ async function loadDocs() {
           </div>
           <div class="text-xs text-gray-500 mb-1">${escapeHtml(d.subject)} ${d.grade ? "· Grade " + escapeHtml(d.grade) : ""} ${d.chapter ? "· " + escapeHtml(d.chapter) : ""}</div>
           <div class="text-xs text-gray-400">${escapeHtml(d.text_preview).slice(0, 200)}${d.text_preview.length > 200 ? "…" : ""}</div>
-          ${!d.text_preview ? '<div class="text-xs text-amber-600 mt-1">⚠️ No text could be extracted — likely a scanned/image-only PDF.</div>' : ""}
+          ${!d.text_preview ? '<div class="callout callout-warning text-xs mt-2">No text could be extracted — likely a scanned/image-only PDF.</div>' : ""}
         </div>
         <button class="btn btn-danger" onclick="deleteDoc(${d.id})">Delete</button>
       </div>`
@@ -338,15 +338,15 @@ function paperCard(p) {
         (p.flagged_count ? ` · <span class="text-amber-700">${p.flagged_count} flagged</span>` : "")
       : "";
   const issues = p.issues.length
-    ? `<ul class="text-xs mt-2 p-2 rounded border ${p.status === "failed" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}">
-        ${p.issues.map((i) => `<li>⚠️ ${escapeHtml(i)}</li>`).join("")}
-      </ul>`
+    ? `<div class="callout ${p.status === "failed" ? "callout-danger" : "callout-warning"} text-xs mt-2"><ul>
+        ${p.issues.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}
+      </ul></div>`
     : "";
   return `
     <div class="card p-4 flex justify-between items-start gap-4">
       <div>
         <div class="font-semibold">${escapeHtml(p.title)} <span class="badge badge-${p.status}">${p.status}</span>
-          ${p.status === "ready" && !p.needs_attention ? '<span class="badge badge-ready">all checks passed</span>' : ""}
+          ${p.status === "ready" && !p.needs_attention ? '<span class="badge badge-ready normal-case">All checks passed</span>' : ""}
         </div>
         <div class="text-xs text-gray-500">${escapeHtml(p.subject)}${p.subject && p.paper_code ? " · " : ""}${escapeHtml(p.paper_code)}
           · ${escapeHtml(p.qp_filename)}${p.ms_filename ? " + " + escapeHtml(p.ms_filename) : " (no mark scheme)"}</div>
