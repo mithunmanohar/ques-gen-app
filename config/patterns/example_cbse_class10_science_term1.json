@@ -1,0 +1,54 @@
+{
+  "name": "CBSE Class 10 Science - Sample Paper Pattern",
+  "subject": "Science",
+  "grade": "10",
+  "total_marks": 49,
+  "duration_minutes": 90,
+  "general_instructions": [
+    "All questions are compulsory unless internal choice is indicated.",
+    "Section A has multiple choice questions.",
+    "Draw neat diagrams wherever required."
+  ],
+  "sections": [
+    {
+      "name": "A",
+      "instructions": "Multiple choice questions, 1 mark each.",
+      "question_type": "MCQ",
+      "num_questions": 10,
+      "marks_per_question": 1,
+      "difficulty_mix": { "easy": 0.5, "medium": 0.4, "hard": 0.1 }
+    },
+    {
+      "name": "B",
+      "instructions": "Very short answer questions, 2 marks each.",
+      "question_type": "VSA",
+      "num_questions": 5,
+      "marks_per_question": 2,
+      "difficulty_mix": { "easy": 0.3, "medium": 0.5, "hard": 0.2 }
+    },
+    {
+      "name": "C",
+      "instructions": "Short answer questions, 3 marks each. Attempt any 4 of 5.",
+      "question_type": "SA",
+      "num_questions": 5,
+      "num_to_attempt": 4,
+      "marks_per_question": 3,
+      "difficulty_mix": { "easy": 0.2, "medium": 0.5, "hard": 0.3 }
+    },
+    {
+      "name": "D",
+      "instructions": "Long answer questions, 5 marks each.",
+      "question_type": "LA",
+      "num_questions": 2,
+      "marks_per_question": 5,
+      "difficulty_mix": { "medium": 0.5, "hard": 0.5 }
+    },
+    {
+      "name": "E",
+      "instructions": "Case-study based question, 4 marks.",
+      "question_type": "CASE_STUDY",
+      "num_questions": 1,
+      "marks_per_question": 4
+    }
+  ]
+}
