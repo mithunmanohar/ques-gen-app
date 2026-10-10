@@ -22,7 +22,8 @@ if ! PYTHON="$(find_python)"; then
   echo "  PROBLEM: Python 3.10 or newer was not found on this computer."
   echo ""
   case "$(uname -s)" in
-    Darwin) echo "  Install it from https://www.python.org/downloads/ (or: brew install python)," ;;
+    Darwin) echo "  (The python3 built into macOS is version 3.9, which is too old.)"
+            echo "  Install a current Python from https://www.python.org/downloads/ (or: brew install python)," ;;
     *)      echo "  Install it with your package manager, e.g.:  sudo apt install python3 python3-venv" ;;
   esac
   echo "  then run this script again."

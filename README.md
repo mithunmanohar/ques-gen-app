@@ -25,6 +25,11 @@ part of the app does and why it's built this way.
 [python.org/downloads](https://www.python.org/downloads/). On Windows, tick
 **"Add python.exe to PATH"** in the installer.
 
+> **macOS:** the `python3` that comes with macOS (from Apple's developer
+> tools) is Python 3.9, which is too old. Install a current Python from
+> python.org (or with `brew install python`). The launcher automatically
+> uses the newest Python 3.10+ it finds.
+
 1. Download this folder (on GitHub: **Code → Download ZIP**, then unzip it).
 2. Start the app:
    - **Windows:** double-click **`run.bat`**.
@@ -190,6 +195,19 @@ fact.
 
 When reporting a problem, include the reference from the error message and
 the downloaded log file.
+
+**Common setup problems**
+
+- **`No matching distribution found for pymupdf==…`:** the app's private
+  environment (`.venv`) was built with Python 3.9 or older, typically
+  macOS's built-in Python. Install Python 3.10+ (see Quick start) and run
+  the launcher again. It notices the outdated `.venv` and rebuilds it
+  automatically.
+- **"Python 3.10 or newer was not found":** install it from python.org. On
+  Windows, tick "Add python.exe to PATH", then start `run.bat` again.
+- **Package installation fails:** check your internet connection or proxy,
+  then run again with `--reinstall`. The full pip output is in
+  `data/logs/setup.log`.
 
 ## Running the tests
 
